@@ -460,10 +460,10 @@ function App() {
     <div className="page">
       <header className="hero-section">
         <div>
-          <span className="eyebrow">TradeView</span>
-          <h1>Quản lý tài chính cá nhân</h1>
+          <span className="eyebrow">Khánh Thảo</span>
+          <h1>Quản lý tài chính</h1>
           <p className="hero-text">
-            Một dashboard tập trung để nhập lệnh mua/bán, cập nhật giá hiện tại
+            Quản lý lệnh mua/bán, cập nhật giá hiện tại
             theo chế độ auto hoặc manual và theo dõi lãi/lỗ tổng tài sản theo
             thời gian thực.
           </p>
@@ -746,7 +746,7 @@ function App() {
                   <div>
                     <strong>
                       {formatNumber(Number(transaction.quantity))}{' '}
-                      {transaction.asset.category.code === 'SAVING' ? 'gửi @ ' : '@ '}
+                      {transaction.asset.category.code === 'SAVING' ? 'gửi @ ' : 'x '}
                       {transaction.asset.category.code === 'SAVING'
                         ? `${formatNumber(Number(transaction.price))}%/năm`
                         : formatCurrency(Number(transaction.price))}

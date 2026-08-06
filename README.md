@@ -250,6 +250,25 @@ Kết quả:
 - Backend output trong `backend/dist`
 - Frontend output trong `frontend/dist`
 
+## 7.3 Zip file build để deploy
+
+### Zip frontend build (Windows PowerShell)
+```bash
+powershell -Command "Compress-Archive -Path 'frontend/dist/*' -DestinationPath 'frontend/frontend-dist.zip' -Force"
+```
+
+### Zip backend build (Windows PowerShell)
+```bash
+powershell -Command "Compress-Archive -Path 'backend/dist/*' -DestinationPath 'backend/backend-dist.zip' -Force"
+```
+
+### Zip backend package để deploy
+Ngoài `dist`, backend production thường cần thêm `package.json`, `package-lock.json` và thư mục `prisma`.
+
+```bash
+powershell -Command "Compress-Archive -Path 'backend/dist','backend/prisma','backend/package.json','backend/package-lock.json' -DestinationPath 'backend/backend-deploy.zip' -Force"
+```
+
 ---
 
 ## 8. Kết nối frontend với backend
@@ -326,6 +345,18 @@ npx prisma generate
 npm run build
 ```
 
+Hoặc deploy từ file zip build sẵn trên máy local:
+
+### Copy backend package lên server qua SSH
+```bash
+scp backend/backend-deploy.zip your-user@your-server:/opt/tradeview/
+```
+
+### SSH vào server, giải nén và cài dependencies production
+```bash
+ssh your-user@your-server "mkdir -p /opt/tradeview/backend && unzip -o /opt/tradeview/backend-deploy.zip -d /opt/tradeview/backend && cd /opt/tradeview/backend && npm install --omit=dev"
+```
+
 Tạo file `.env` production:
 
 ```env
@@ -363,6 +394,18 @@ pm2 startup
 cd frontend
 npm install
 npm run build
+```
+
+Hoặc deploy từ file zip build sẵn trên máy local:
+
+### Copy frontend build lên server qua SSH
+```bash
+scp frontend/frontend-dist.zip your-user@your-server:/var/www/tradeview/
+```
+
+### SSH vào server và giải nén
+```bash
+ssh your-user@your-server "mkdir -p /var/www/tradeview/frontend && unzip -o /var/www/tradeview/frontend-dist.zip -d /var/www/tradeview/frontend"
 ```
 
 Cấu hình Nginx phục vụ static files từ `frontend/dist`.
