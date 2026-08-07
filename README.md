@@ -11,7 +11,7 @@ Website quản lý tài chính cá nhân cho các nhóm tài sản:
 
 - **Frontend:** React + Vite + TypeScript
 - **Backend:** NestJS + TypeScript
-- **Database:** MySQL + Prisma ORM
+- **Database:** MySQL / MariaDB + Prisma ORM
 - **Deployment target:** Debian arm64
 
 ---
@@ -69,7 +69,9 @@ TradeView/
 ## 3.1 Công nghệ
 - NestJS
 - Prisma
-- MySQL
+- MySQL / MariaDB
+
+> Prisma hiện dùng MariaDB thông qua `provider = "mysql"` trong `schema.prisma`, không cần đổi sang provider khác.
 
 ## 3.2 Schema dữ liệu chính
 
@@ -127,7 +129,7 @@ Hiện tại frontend đang dùng **mock data** để hiển thị giao diện h
 
 - Node.js 20+
 - npm 10+
-- MySQL 8+
+- MySQL 8+ hoặc MariaDB tương thích MySQL
 - Debian arm64 hoặc môi trường local Windows/Linux/macOS
 
 ---
@@ -153,6 +155,15 @@ backend/.env
 ```
 
 Nội dung ví dụ:
+
+```env
+DATABASE_URL="mysql://root:password@localhost:3306/tradeview"
+PORT=3000
+```
+
+Có thể dùng cùng format connection string này cho MariaDB vì Prisma kết nối MariaDB qua provider `mysql`.
+
+Ví dụ MariaDB local:
 
 ```env
 DATABASE_URL="mysql://root:password@localhost:3306/tradeview"
@@ -230,6 +241,18 @@ Frontend mặc định chạy tại:
 http://localhost:5173
 ```
 
+Có thể đổi port bằng biến môi trường:
+
+```bash
+FRONTEND_PORT=4173 npm run dev
+```
+
+Trên Windows PowerShell:
+
+```bash
+$env:FRONTEND_PORT=4173; npm run dev
+```
+
 ---
 
 ## 7. Build production
@@ -252,22 +275,68 @@ Kết quả:
 
 ## 7.3 Zip file build để deploy
 
-### Zip frontend build (Windows PowerShell)
+Nếu muốn chỉ cần **giải nén trên server và chạy `pm2 start`**, cần đóng gói một bundle deploy duy nhất bao gồm:
+
+- `frontend/dist`
+- `backend/dist`
+- `backend/prisma`
+- `backend/package.json`
+- `backend/package-lock.json`
+- `frontend/package.json`
+- `frontend/package-lock.json`
+- `backend/node_modules`
+- `frontend/node_modules`
+- `ecosystem.config.cjs`
+
+Quy trình đề xuất:
+
+1. Build backend
 ```bash
-powershell -Command "Compress-Archive -Path 'frontend/dist/*' -DestinationPath 'frontend/frontend-dist.zip' -Force"
+cd backend
+npm run build
 ```
 
-### Zip backend build (Windows PowerShell)
+2. Build frontend
 ```bash
-powershell -Command "Compress-Archive -Path 'backend/dist/*' -DestinationPath 'backend/backend-dist.zip' -Force"
+cd ../frontend
+npm run build
 ```
 
-### Zip backend package để deploy
-Ngoài `dist`, backend production thường cần thêm `package.json`, `package-lock.json` và thư mục `prisma`.
+3. Cài production dependencies trên **Debian arm64** hoặc trong CI cùng kiến trúc
+```bash
+cd backend
+npm install --omit=dev
+npx prisma generate
+
+cd ../frontend
+npm install --omit=dev
+```
+
+4. Tạo file zip deploy tổng
+```bash
+Copy-Item "backend/dist" "deploy/backend" -Force
+Copy-Item "frontend/dist" "deploy/frontend" -Force
+Copy-Item "ecosystem.config.cjs" "deploy" -Force
+```
 
 ```bash
-powershell -Command "Compress-Archive -Path 'backend/dist','backend/prisma','backend/package.json','backend/package-lock.json' -DestinationPath 'backend/backend-deploy.zip' -Force"
+powershell -Command "Compress-Archive -Path 'deploy' -DestinationPath 'deploy.zip' -Force"
 ```
+
+5. Copy bundle lên server qua SSH
+```bash
+scp D:\MyData\Web\TradeView\deploy.zip root@server:/home/data/TaiChinh
+```
+
+6. Giải nén trên server
+```bash
+ssh your-user@your-server "mkdir -p /home/data/TaiChinh/app && unzip -o /home/data/TaiChinh/deploy.zip -d /home/data/TaiChinh"
+```
+
+Lưu ý quan trọng:
+- Nếu file zip được tạo từ **Windows**, `node_modules` bên trong **không đảm bảo chạy được** trên Debian arm64.
+- Muốn đạt đúng mô hình **chỉ giải nén rồi `pm2 start`**, bundle phải được tạo trên **Debian arm64** hoặc CI/container cùng kiến trúc với server.
+- Sau khi giải nén, bạn có thể start PM2 trực tiếp bằng file `ecosystem.config.cjs` tại thư mục gốc của bundle.
 
 ---
 
@@ -336,110 +405,115 @@ cd TradeView
 
 ---
 
-## 9.3 Backend deploy
+## 9.3 Deploy bundle bằng PM2
 
+Mô hình deploy đơn giản nhất:
+
+- build trên máy local
+- zip thành **1 file duy nhất**
+- copy lên server
+- giải nén
+- chạy `pm2 start ecosystem.config.cjs`
+
+### Cấu trúc bundle deploy
+Bundle chứa:
+- `backend/dist`
+- `backend/prisma`
+- `backend/package.json`
+- `backend/package-lock.json`
+- `backend/node_modules`
+- `frontend/dist`
+- `frontend/package.json`
+- `frontend/package-lock.json`
+- `frontend/node_modules`
+- `ecosystem.config.cjs`
+
+### Chuẩn bị trên server
+Cài PM2:
 ```bash
-cd backend
-npm install
-npx prisma generate
-npm run build
+sudo npm install -g pm2
 ```
 
-Hoặc deploy từ file zip build sẵn trên máy local:
-
-### Copy backend package lên server qua SSH
-```bash
-scp backend/backend-deploy.zip your-user@your-server:/opt/tradeview/
+Tạo file môi trường backend trên server:
+```text
+/home/data/TaiChinh/app/backend/.env
 ```
 
-### SSH vào server, giải nén và cài dependencies production
-```bash
-ssh your-user@your-server "mkdir -p /opt/tradeview/backend && unzip -o /opt/tradeview/backend-deploy.zip -d /opt/tradeview/backend && cd /opt/tradeview/backend && npm install --omit=dev"
-```
-
-Tạo file `.env` production:
-
+Ví dụ:
 ```env
 DATABASE_URL="mysql://user:password@host:3306/tradeview"
 PORT=3000
 NODE_ENV=production
 ```
 
-Chạy migrate:
+Nếu frontend có `.env.production` riêng thì cũng có thể đặt thêm trong:
+```text
+/home/data/TaiChinh/app/frontend/
+```
 
+### Giải nén bundle
 ```bash
+mkdir -p /home/data/TaiChinh/app
+unzip -o /home/data/TaiChinh/tradeview-deploy.zip -d /home/data/TaiChinh/app
+```
+
+### Tạo file môi trường và migrate database
+```bash
+cd /home/data/TaiChinh/app/backend
+npx prisma generate
 npx prisma migrate deploy
 ```
 
-Start production:
-
+### Start bằng PM2
 ```bash
-npm run start:prod
-```
-
-Khuyến nghị dùng **PM2**:
-
-```bash
-sudo npm install -g pm2
-pm2 start dist/main.js --name tradeview-api
+cd /home/data/TaiChinh/app
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
 
----
-
-## 9.4 Frontend deploy
-
+### Quản lý app mà không ảnh hưởng service khác
 ```bash
-cd frontend
-npm install
-npm run build
+pm2 logs tradeview-backend
+pm2 logs tradeview-frontend
+
+pm2 restart tradeview-backend
+pm2 restart tradeview-frontend
+
+pm2 stop tradeview-backend
+pm2 stop tradeview-frontend
+
+pm2 delete tradeview-backend
+pm2 delete tradeview-frontend
 ```
 
-Hoặc deploy từ file zip build sẵn trên máy local:
-
-### Copy frontend build lên server qua SSH
+Không dùng:
 ```bash
-scp frontend/frontend-dist.zip your-user@your-server:/var/www/tradeview/
+pm2 restart all
+pm2 stop all
+pm2 delete all
 ```
 
-### SSH vào server và giải nén
+### Port để expose qua Cloudflare Tunnel
+- Backend: `127.0.0.1:3000`
+- Frontend: `127.0.0.1:4173`
+
+### Lưu ý về path và kiến trúc
+File `ecosystem.config.cjs` gộp đang dùng đường dẫn tương đối:
+- backend: `./backend`
+- frontend: `./frontend`
+
+Vì vậy chỉ cần:
 ```bash
-ssh your-user@your-server "mkdir -p /var/www/tradeview/frontend && unzip -o /var/www/tradeview/frontend-dist.zip -d /var/www/tradeview/frontend"
+cd /home/data/TaiChinh/app
+pm2 start ecosystem.config.cjs
 ```
 
-Cấu hình Nginx phục vụ static files từ `frontend/dist`.
+là đủ, không cần sửa path nếu giữ nguyên cấu trúc thư mục sau khi giải nén.
 
-Ví dụ:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain-or-ip;
-
-    root /path/to/TradeView/frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:3000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
-Kiểm tra config rồi reload nginx:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
+Tuy nhiên:
+- nếu muốn bundle chứa sẵn `node_modules` để khỏi chạy `npm install` trên server,
+- thì bundle đó phải được build trên **Debian arm64** hoặc môi trường tương thích với server đích.
 
 ---
 
