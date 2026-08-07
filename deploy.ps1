@@ -13,3 +13,6 @@ powershell -Command "Compress-Archive -Path 'deploy' -DestinationPath 'deploy.zi
 
 #copy to server
 scp deploy.zip root@server:/home/data/TaiChinh
+
+#install package in server
+#npm ci --omit=dev
