@@ -461,13 +461,10 @@ function App() {
       <header className="hero-section">
         <div>
           <span className="eyebrow">Khánh Thảo</span>
-          <h1>Quản lý tài chính</h1>
+          <h1>Tài chính Gia Đình</h1>
           <p className="hero-text">
-            Quản lý lệnh mua/bán, cập nhật giá hiện tại
-            theo chế độ auto hoặc manual và theo dõi lãi/lỗ tổng tài sản theo
-            thời gian thực.
+            Quản lý tài chính, đầu tư của gia đình.
           </p>
-          <p className="hero-text">API: {apiBaseUrl}</p>
         </div>
         <div className="hero-card mt-2">
           <div className="hero-card-label">Tổng tài chính hiện tại</div>
@@ -730,7 +727,7 @@ function App() {
         </div>
       </section>
 
-      <section className="section two-columns">
+      <section className="section">
         <div className="panel">
           <div className="section-heading">
             <div>
@@ -744,13 +741,7 @@ function App() {
               <div className="activity-row" key={transaction.id}>
                 <div className='row'>
                   <div>
-                    <strong>
-                      {formatNumber(Number(transaction.quantity))}{' '}
-                      {transaction.asset.category.code === 'SAVING' ? 'gửi @ ' : 'x '}
-                      {transaction.asset.category.code === 'SAVING'
-                        ? `${formatNumber(Number(transaction.price))}%/năm`
-                        : formatCurrency(Number(transaction.price))}
-                    </strong>
+                    <strong>{transaction.asset.name}</strong>
                   </div>
                   <span
                     className={
@@ -766,7 +757,13 @@ function App() {
                 </div>
                 <div className="activity-meta w-100">
                   <div>
-                    <strong>{transaction.asset.name}</strong>
+                    <strong>
+                      {formatNumber(Number(transaction.quantity))}{' '}
+                      {transaction.asset.category.code === 'SAVING' ? 'gửi @ ' : 'x '}
+                      {transaction.asset.category.code === 'SAVING'
+                        ? `${formatNumber(Number(transaction.price))}%/năm`
+                        : formatCurrency(Number(transaction.price))}
+                    </strong>
                     <p>
                       {transaction.asset.symbol} • {formatDateTime(transaction.executedAt)}
                     </p>

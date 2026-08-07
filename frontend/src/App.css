@@ -145,7 +145,7 @@
 .category-card {
   border-radius: 20px;
   padding: 20px;
-  width: 100%;
+  width: calc(100% - 40px);
 }
 
 .category-card-header {
@@ -398,6 +398,7 @@ tbody tr:last-child td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
   min-height: 28px;
   padding: 4px 10px;
   border-radius: 999px;
