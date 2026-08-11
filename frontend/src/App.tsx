@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import './App.css';
@@ -102,6 +102,10 @@ type PriceFormState = {
   capturedAt: string;
 };
 
+const ACCESS_COOKIE_NAME = 'tradeview_passcode_access';
+const ACCESS_COOKIE_DURATION_DAYS = 30;
+const APP_PASSCODE = import.meta.env.VITE_APP_PASSCODE?.trim() || '123456';
+
 const apiBaseUrl =
   import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000/api';
 
@@ -161,7 +165,37 @@ function toDateTimeLocalValue(date = new Date()) {
   return localDate.toISOString().slice(0, 16);
 }
 
+function getCookie(name: string) {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+
+  const cookie = document.cookie
+    .split('; ')
+    .find((item) => item.startsWith(`${name}=`));
+
+  return cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : '';
+}
+
+function setCookie(name: string, value: string, days: number) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function deleteCookie(name: string) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+}
+
 function App() {
+  const toastTimeoutRef = useRef<number | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<LatestTransaction[]>([]);
@@ -170,6 +204,12 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [passcode, setPasscode] = useState('');
+  const [rememberLogin, setRememberLogin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => getCookie(ACCESS_COOKIE_NAME) === 'granted',
+  );
+  const [passcodeError, setPasscodeError] = useState('');
   const [autoGoldRefreshTriggered, setAutoGoldRefreshTriggered] = useState(false);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [isPriceDialogOpen, setIsPriceDialogOpen] = useState(false);
@@ -203,7 +243,38 @@ function App() {
     capturedAt: toDateTimeLocalValue(),
   });
 
+  const showToast = (type: 'success' | 'error', message: string) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+
+    if (type === 'success') {
+      setErrorMessage('');
+      setSuccessMessage(message);
+    } else {
+      setSuccessMessage('');
+      setErrorMessage(message);
+    }
+
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setErrorMessage('');
+      setSuccessMessage('');
+      toastTimeoutRef.current = null;
+    }, 3000);
+  };
+
+  const clearToast = () => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
   const loadData = async () => {
+    setLoading(true);
     setErrorMessage('');
 
     try {
@@ -272,7 +343,22 @@ function App() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      setAutoGoldRefreshTriggered(false);
+      return;
+    }
+
+    setAutoGoldRefreshTriggered(false);
     void loadData();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        window.clearTimeout(toastTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -300,13 +386,14 @@ function App() {
         await loadData();
       } catch (error) {
         if (axios.isAxiosError(error)) {
-          setErrorMessage(
+          showToast(
+            'error',
             error.response?.data?.message ||
               error.message ||
               'Không thể tự động cập nhật giá vàng.',
           );
         } else {
-          setErrorMessage('Không thể tự động cập nhật giá vàng.');
+          showToast('error', 'Không thể tự động cập nhật giá vàng.');
         }
       }
     })();
@@ -351,24 +438,71 @@ function App() {
   const isAutoGoldPriceUpdate =
     priceForm.source === 'AUTO' && selectedPriceAsset?.categoryCode === 'GOLD';
 
+  const handlePasscodeSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasscodeError('');
+    clearToast();
+
+    const sanitizedPasscode = passcode.replace(/\D/g, '');
+
+    if (!/^\d{6}$/.test(sanitizedPasscode)) {
+      setPasscodeError('Vui lòng nhập đúng passcode gồm 6 chữ số.');
+      return;
+    }
+
+    if (sanitizedPasscode !== APP_PASSCODE) {
+      setPasscodeError('Passcode không chính xác.');
+      return;
+    }
+
+    if (rememberLogin) {
+      setCookie(
+        ACCESS_COOKIE_NAME,
+        'granted',
+        ACCESS_COOKIE_DURATION_DAYS,
+      );
+    } else {
+      deleteCookie(ACCESS_COOKIE_NAME);
+    }
+
+    setIsAuthenticated(true);
+    setPasscode('');
+    showToast('success', 'Đăng nhập thành công.');
+  };
+
+  const handleLogout = () => {
+    deleteCookie(ACCESS_COOKIE_NAME);
+    setIsAuthenticated(false);
+    setRememberLogin(false);
+    setPasscode('');
+    setPasscodeError('');
+    clearToast();
+    setDashboard(emptyDashboard);
+    setCategories([]);
+    setTransactions([]);
+    setLatestPrices([]);
+    setAutoGoldRefreshTriggered(false);
+    setLoading(false);
+  };
+
   const handleDeleteTransaction = async (transactionId: number) => {
     setSubmitting(true);
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearToast();
 
     try {
       await api.delete(`/transactions/${transactionId}`);
-      setSuccessMessage('Đã xóa giao dịch thành công.');
+      showToast('success', 'Đã xóa giao dịch thành công.');
       await loadData();
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        setErrorMessage(
+        showToast(
+          'error',
           error.response?.data?.message ||
             error.message ||
             'Không thể xóa giao dịch.',
         );
       } else {
-        setErrorMessage('Không thể xóa giao dịch.');
+        showToast('error', 'Không thể xóa giao dịch.');
       }
     } finally {
       setSubmitting(false);
@@ -378,8 +512,7 @@ function App() {
   const handleCreateAsset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearToast();
 
     try {
       await api.post('/assets', {
@@ -397,18 +530,19 @@ function App() {
         unit: '',
         notes: '',
       }));
-      setSuccessMessage('Đã tạo tài sản mới thành công.');
+      showToast('success', 'Đã tạo tài sản mới thành công.');
       setIsAssetDialogOpen(false);
       await loadData();
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        setErrorMessage(
+        showToast(
+          'error',
           error.response?.data?.message ||
             error.message ||
             'Không thể tạo tài sản.',
         );
       } else {
-        setErrorMessage('Không thể tạo tài sản.');
+        showToast('error', 'Không thể tạo tài sản.');
       }
     } finally {
       setSubmitting(false);
@@ -418,8 +552,7 @@ function App() {
   const handleCreateTransaction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearToast();
 
     try {
       await api.post('/transactions', {
@@ -444,18 +577,19 @@ function App() {
         executedAt: toDateInputValue(),
         settledAt: '',
       }));
-      setSuccessMessage('Đã lưu giao dịch thành công.');
+      showToast('success', 'Đã lưu giao dịch thành công.');
       setIsTransactionDialogOpen(false);
       await loadData();
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        setErrorMessage(
+        showToast(
+          'error',
           error.response?.data?.message ||
             error.message ||
             'Không thể lưu giao dịch.',
         );
       } else {
-        setErrorMessage('Không thể lưu giao dịch.');
+        showToast('error', 'Không thể lưu giao dịch.');
       }
     } finally {
       setSubmitting(false);
@@ -465,8 +599,7 @@ function App() {
   const handleCreatePrice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearToast();
 
     try {
       if (isAutoGoldPriceUpdate) {
@@ -488,7 +621,8 @@ function App() {
         price: '',
         capturedAt: toDateTimeLocalValue(),
       }));
-      setSuccessMessage(
+      showToast(
+        'success',
         isAutoGoldPriceUpdate
           ? 'Đã tự động cập nhật giá vàng thành công.'
           : 'Đã cập nhật giá hiện tại thành công.',
@@ -497,18 +631,72 @@ function App() {
       await loadData();
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        setErrorMessage(
+        showToast(
+          'error',
           error.response?.data?.message ||
             error.message ||
             'Không thể cập nhật giá.',
         );
       } else {
-        setErrorMessage('Không thể cập nhật giá.');
+        showToast('error', 'Không thể cập nhật giá.');
       }
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="passcode-shell">
+        <section className="passcode-card">
+          <span className="eyebrow">TradeView Access</span>
+          <h1>Mã truy cập</h1>
+          <p className="hero-text passcode-text">
+            Nhập passcode 6 chữ số để truy cập trang quản lý tài chính gia đình.
+          </p>
+
+          <form className="passcode-form" onSubmit={handlePasscodeSubmit}>
+            <label htmlFor="passcode-input" className="passcode-label">
+              Passcode
+            </label>
+            <input
+              id="passcode-input"
+              className="passcode-input"
+              type="password"
+              inputMode="numeric"
+              pattern="\d{6}"
+              maxLength={6}
+              autoComplete="one-time-code"
+              placeholder="••••••"
+              value={passcode}
+              onChange={(event) => {
+                setPasscode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                if (passcodeError) {
+                  setPasscodeError('');
+                }
+              }}
+              required
+            />
+
+            <label className="remember-option">
+              <input
+                type="checkbox"
+                checked={rememberLogin}
+                onChange={(event) => setRememberLogin(event.target.checked)}
+              />
+              <span>Ghi nhớ đăng nhập trên thiết bị này</span>
+            </label>
+
+            {passcodeError ? <strong className="loss">{passcodeError}</strong> : null}
+
+            <button type="submit" className="primary-button passcode-button">
+              Truy cập
+            </button>
+          </form>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -521,7 +709,16 @@ function App() {
           </p>
         </div>
         <div className="hero-card mt-2">
-          <div className="hero-card-label">Tổng tài chính hiện tại</div>
+          <div className="row">
+            <div className="hero-card-label">Tổng tài chính hiện tại</div>
+            <button
+              type="button"
+              className="secondary-button logout-button"
+              onClick={handleLogout}
+            >
+              Đăng xuất
+            </button>
+          </div>
           <div className="hero-card-value">
             {formatCurrency(dashboard.totals.totalMarketValue)}
           </div>
@@ -544,20 +741,26 @@ function App() {
         </section>
       ) : null}
 
-      {errorMessage ? (
-        <section className="section">
-          <div className="panel">
-            <strong className="loss">{errorMessage}</strong>
-          </div>
-        </section>
-      ) : null}
+      {errorMessage || successMessage ? (
+        <div className="toast-stack" aria-live="polite" aria-atomic="true">
+          {errorMessage ? (
+            <div className="toast toast-error" role="alert">
+              <strong>{errorMessage}</strong>
+              <button type="button" className="toast-close" onClick={clearToast}>
+                ×
+              </button>
+            </div>
+          ) : null}
 
-      {successMessage ? (
-        <section className="section">
-          <div className="panel">
-            <strong className="profit">{successMessage}</strong>
-          </div>
-        </section>
+          {successMessage ? (
+            <div className="toast toast-success" role="status">
+              <strong>{successMessage}</strong>
+              <button type="button" className="toast-close" onClick={clearToast}>
+                ×
+              </button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <section className="stats-grid">
