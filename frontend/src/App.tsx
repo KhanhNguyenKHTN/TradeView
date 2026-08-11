@@ -170,6 +170,7 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [autoGoldRefreshTriggered, setAutoGoldRefreshTriggered] = useState(false);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [isPriceDialogOpen, setIsPriceDialogOpen] = useState(false);
   const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
@@ -274,6 +275,43 @@ function App() {
     void loadData();
   }, []);
 
+  useEffect(() => {
+    if (loading || autoGoldRefreshTriggered || dashboard.assets.length === 0) {
+      return;
+    }
+
+    const autoGoldAsset = latestPrices.find(
+      (item) =>
+        item.category.code === 'GOLD' && item.latestPrice?.source === 'AUTO',
+    );
+
+    if (!autoGoldAsset) {
+      return;
+    }
+
+    setAutoGoldRefreshTriggered(true);
+
+    void (async () => {
+      try {
+        await api.post('/prices/auto/gold', {
+          assetId: autoGoldAsset.assetId,
+          capturedAt: new Date().toISOString(),
+        });
+        await loadData();
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          setErrorMessage(
+            error.response?.data?.message ||
+              error.message ||
+              'Không thể tự động cập nhật giá vàng.',
+          );
+        } else {
+          setErrorMessage('Không thể tự động cập nhật giá vàng.');
+        }
+      }
+    })();
+  }, [autoGoldRefreshTriggered, dashboard.assets.length, latestPrices, loading]);
+
   const trackedAssetsCount = dashboard.assets.length;
 
   const selectedTransactionAsset =
@@ -307,6 +345,11 @@ function App() {
     () => latestPrices.filter((item) => item.category.code !== 'SAVING'),
     [latestPrices],
   );
+
+  const selectedPriceAsset =
+    dashboard.assets.find((asset) => String(asset.id) === priceForm.assetId) ?? null;
+  const isAutoGoldPriceUpdate =
+    priceForm.source === 'AUTO' && selectedPriceAsset?.categoryCode === 'GOLD';
 
   const handleDeleteTransaction = async (transactionId: number) => {
     setSubmitting(true);
@@ -426,19 +469,30 @@ function App() {
     setSuccessMessage('');
 
     try {
-      await api.post('/prices', {
-        assetId: Number(priceForm.assetId),
-        source: priceForm.source,
-        price: Number(priceForm.price),
-        capturedAt: new Date(priceForm.capturedAt).toISOString(),
-      });
+      if (isAutoGoldPriceUpdate) {
+        await api.post('/prices/auto/gold', {
+          assetId: Number(priceForm.assetId),
+          capturedAt: new Date(priceForm.capturedAt).toISOString(),
+        });
+      } else {
+        await api.post('/prices', {
+          assetId: Number(priceForm.assetId),
+          source: priceForm.source,
+          price: Number(priceForm.price),
+          capturedAt: new Date(priceForm.capturedAt).toISOString(),
+        });
+      }
 
       setPriceForm((current) => ({
         ...current,
         price: '',
         capturedAt: toDateTimeLocalValue(),
       }));
-      setSuccessMessage('Đã cập nhật giá hiện tại thành công.');
+      setSuccessMessage(
+        isAutoGoldPriceUpdate
+          ? 'Đã tự động cập nhật giá vàng thành công.'
+          : 'Đã cập nhật giá hiện tại thành công.',
+      );
       setIsPriceDialogOpen(false);
       await loadData();
     } catch (error) {
@@ -1114,7 +1168,9 @@ function App() {
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="0"
+                  placeholder={
+                    isAutoGoldPriceUpdate ? 'Giá sẽ được lấy tự động từ web vàng' : '0'
+                  }
                   value={priceForm.price}
                   onChange={(event) =>
                     setPriceForm((current) => ({
@@ -1122,10 +1178,14 @@ function App() {
                       price: event.target.value,
                     }))
                   }
-                  disabled={submitting}
-                  required
+                  disabled={submitting || isAutoGoldPriceUpdate}
+                  required={!isAutoGoldPriceUpdate}
                 />
-                {formatCurrencyPreview(priceForm.price) ? (
+                {isAutoGoldPriceUpdate ? (
+                  <span className="input-preview">
+                    Chế độ AUTO sẽ lấy giá mua vàng nhẫn khâu 9999 và tự tính lại dashboard.
+                  </span>
+                ) : formatCurrencyPreview(priceForm.price) ? (
                   <span className="input-preview">
                     {formatCurrencyPreview(priceForm.price)}
                   </span>
