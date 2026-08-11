@@ -1,9 +1,10 @@
 #backend
 Copy-Item "backend/dist" "deploy/backend" -Recurse -Force
+Copy-Item "backend/prisma" "deploy/backend/prisma" -Recurse -Force
 Copy-Item "backend/ecosystem.config.js" "deploy/backend" -Force
 Copy-Item "backend/package.json" "deploy/backend" -Force
 Copy-Item "backend/package-lock.json" "deploy/backend" -Force
-Copy-Item "backend/.env" "deploy/backend/.env" -Force
+Copy-Item "backend/.env.production" "deploy/backend/.env" -Force
 
 #fontend
 Copy-Item "frontend/dist" "deploy/frontend" -Recurse -Force
