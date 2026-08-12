@@ -89,6 +89,9 @@
   color: var(--text-h);
   background: rgba(255, 255, 255, 0.4);
   border: 1px solid var(--border);
+  width: 130px;
+  top: -12px;
+  right: 10px;
 }
 
 .toast-stack {

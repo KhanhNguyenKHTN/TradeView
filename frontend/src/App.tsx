@@ -1,106 +1,53 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import './App.css';
+import PasscodeGate from './components/PasscodeGate';
+import {
+  AppHeader,
+  CategorySummarySection,
+  LoadingSection,
+  PortfolioSection,
+  QuickActionsSection,
+  RecentTransactionsSection,
+  StatsGrid,
+  ToastStack,
+} from './components/DashboardSections';
+import type {
+  AssetFormState,
+  AssetOption,
+  Category,
+  DashboardResponse,
+  LatestPrice,
+  LatestTransaction,
+  PriceFormState,
+  TransactionFormState,
+} from './types/app';
+import { toDateInputValue, toDateTimeLocalValue } from './utils/appFormatters';
 
-type CategoryCode = 'GOLD' | 'SAVING' | 'STOCK' | 'COIN';
-type TransactionType = 'BUY' | 'SELL';
-type PriceSource = 'AUTO' | 'MANUAL';
+const TransactionDialog = lazy(() =>
+  import('./components/AppDialogs').then((module) => ({
+    default: module.TransactionDialog,
+  })),
+);
 
-type Category = {
-  id: number;
-  code: CategoryCode;
-  name: string;
-  isEnabled: boolean;
-};
+const PriceDialog = lazy(() =>
+  import('./components/AppDialogs').then((module) => ({
+    default: module.PriceDialog,
+  })),
+);
 
-type CategorySummary = {
-  categoryCode: CategoryCode;
-  categoryName: string;
-  totalCost: number;
-  totalMarketValue: number;
-  totalProfitLoss: number;
-};
+const AssetDialog = lazy(() =>
+  import('./components/AppDialogs').then((module) => ({
+    default: module.AssetDialog,
+  })),
+);
 
-type AssetSummary = {
-  id: number;
-  symbol: string;
-  name: string;
-  unit: string;
-  categoryCode: CategoryCode;
-  categoryName: string;
-  holdingQuantity: number;
-  totalCost: number;
-  latestPrice: number;
-  marketValue: number;
-  profitLoss: number;
-};
-
-type DashboardResponse = {
-  totals: {
-    totalCost: number;
-    totalMarketValue: number;
-    totalProfitLoss: number;
-  };
-  byCategory: CategorySummary[];
-  assets: AssetSummary[];
-};
-
-type LatestTransaction = {
-  id: number;
-  type: TransactionType;
-  quantity: string;
-  price: string;
-  fee: string;
-  executedAt: string;
-  settledAt?: string | null;
-  note: string | null;
-  asset: {
-    id: number;
-    symbol: string;
-    name: string;
-    category: Category;
-  };
-};
-
-type LatestPrice = {
-  assetId: number;
-  symbol: string;
-  assetName: string;
-  category: Category;
-  latestPrice: {
-    id: number;
-    price: string;
-    source: PriceSource;
-    capturedAt: string;
-  } | null;
-};
-
-type AssetFormState = {
-  categoryCode: CategoryCode;
-  symbol: string;
-  name: string;
-  unit: string;
-  notes: string;
-};
-
-type TransactionFormState = {
-  assetId: string;
-  type: TransactionType;
-  quantity: string;
-  price: string;
-  fee: string;
-  executedAt: string;
-  settledAt: string;
-  note: string;
-};
-
-type PriceFormState = {
-  assetId: string;
-  source: PriceSource;
-  price: string;
-  capturedAt: string;
-};
+const DeleteTransactionDialog = lazy(() =>
+  import('./components/AppDialogs').then((module) => ({
+    default: module.DeleteTransactionDialog,
+  })),
+);
 
 const ACCESS_COOKIE_NAME = 'tradeview_passcode_access';
 const ACCESS_COOKIE_DURATION_DAYS = 30;
@@ -122,48 +69,6 @@ const emptyDashboard: DashboardResponse = {
   byCategory: [],
   assets: [],
 };
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('vi-VN', {
-    maximumFractionDigits: 4,
-  }).format(value);
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
-
-function formatCurrencyPreview(value: string) {
-  const normalizedValue = value.trim().replace(/,/g, '');
-  const parsedValue = Number(normalizedValue);
-
-  if (!normalizedValue || Number.isNaN(parsedValue)) {
-    return '';
-  }
-
-  return formatCurrency(parsedValue);
-}
-
-function toDateInputValue(date = new Date()) {
-  return date.toISOString().slice(0, 10);
-}
-
-function toDateTimeLocalValue(date = new Date()) {
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
-}
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') {
@@ -367,8 +272,7 @@ function App() {
     }
 
     const autoGoldAsset = latestPrices.find(
-      (item) =>
-        item.category.code === 'GOLD' && item.latestPrice?.source === 'AUTO',
+      (item) => item.category.code === 'GOLD' && item.latestPrice?.source === 'AUTO',
     );
 
     if (!autoGoldAsset) {
@@ -406,7 +310,7 @@ function App() {
     null;
   const isSavingTransaction = selectedTransactionAsset?.categoryCode === 'SAVING';
 
-  const transactionAssetOptions = useMemo(
+  const transactionAssetOptions = useMemo<AssetOption[]>(
     () =>
       dashboard.assets.map((asset) => ({
         id: asset.id,
@@ -416,7 +320,7 @@ function App() {
     [dashboard.assets],
   );
 
-  const priceAssetOptions = useMemo(
+  const priceAssetOptions = useMemo<AssetOption[]>(
     () =>
       dashboard.assets
         .filter((asset) => asset.categoryCode !== 'SAVING')
@@ -456,11 +360,7 @@ function App() {
     }
 
     if (rememberLogin) {
-      setCookie(
-        ACCESS_COOKIE_NAME,
-        'granted',
-        ACCESS_COOKIE_DURATION_DAYS,
-      );
+      setCookie(ACCESS_COOKIE_NAME, 'granted', ACCESS_COOKIE_DURATION_DAYS);
     } else {
       deleteCookie(ACCESS_COOKIE_NAME);
     }
@@ -497,9 +397,7 @@ function App() {
       if (axios.isAxiosError(error)) {
         showToast(
           'error',
-          error.response?.data?.message ||
-            error.message ||
-            'Không thể xóa giao dịch.',
+          error.response?.data?.message || error.message || 'Không thể xóa giao dịch.',
         );
       } else {
         showToast('error', 'Không thể xóa giao dịch.');
@@ -537,9 +435,7 @@ function App() {
       if (axios.isAxiosError(error)) {
         showToast(
           'error',
-          error.response?.data?.message ||
-            error.message ||
-            'Không thể tạo tài sản.',
+          error.response?.data?.message || error.message || 'Không thể tạo tài sản.',
         );
       } else {
         showToast('error', 'Không thể tạo tài sản.');
@@ -584,9 +480,7 @@ function App() {
       if (axios.isAxiosError(error)) {
         showToast(
           'error',
-          error.response?.data?.message ||
-            error.message ||
-            'Không thể lưu giao dịch.',
+          error.response?.data?.message || error.message || 'Không thể lưu giao dịch.',
         );
       } else {
         showToast('error', 'Không thể lưu giao dịch.');
@@ -633,9 +527,7 @@ function App() {
       if (axios.isAxiosError(error)) {
         showToast(
           'error',
-          error.response?.data?.message ||
-            error.message ||
-            'Không thể cập nhật giá.',
+          error.response?.data?.message || error.message || 'Không thể cập nhật giá.',
         );
       } else {
         showToast('error', 'Không thể cập nhật giá.');
@@ -645,908 +537,119 @@ function App() {
     }
   };
 
+  const lazyFallback = (
+    <div className="dialog-overlay">
+      <div className="dialog-panel">
+        <div className="panel">
+          <h2>Đang tải biểu mẫu...</h2>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!isAuthenticated) {
     return (
-      <div className="passcode-shell">
-        <section className="passcode-card">
-          <span className="eyebrow">TradeView Access</span>
-          <h1>Mã truy cập</h1>
-          <p className="hero-text passcode-text">
-            Nhập passcode 6 chữ số để truy cập trang quản lý tài chính gia đình.
-          </p>
-
-          <form className="passcode-form" onSubmit={handlePasscodeSubmit}>
-            <label htmlFor="passcode-input" className="passcode-label">
-              Passcode
-            </label>
-            <input
-              id="passcode-input"
-              className="passcode-input"
-              type="password"
-              inputMode="numeric"
-              pattern="\d{6}"
-              maxLength={6}
-              autoComplete="one-time-code"
-              placeholder="••••••"
-              value={passcode}
-              onChange={(event) => {
-                setPasscode(event.target.value.replace(/\D/g, '').slice(0, 6));
-                if (passcodeError) {
-                  setPasscodeError('');
-                }
-              }}
-              required
-            />
-
-            <label className="remember-option">
-              <input
-                type="checkbox"
-                checked={rememberLogin}
-                onChange={(event) => setRememberLogin(event.target.checked)}
-              />
-              <span>Ghi nhớ đăng nhập trên thiết bị này</span>
-            </label>
-
-            {passcodeError ? <strong className="loss">{passcodeError}</strong> : null}
-
-            <button type="submit" className="primary-button passcode-button">
-              Truy cập
-            </button>
-          </form>
-        </section>
-      </div>
+      <PasscodeGate
+        passcode={passcode}
+        passcodeError={passcodeError}
+        rememberLogin={rememberLogin}
+        onPasscodeChange={(value) => {
+          setPasscode(value.replace(/\D/g, '').slice(0, 6));
+          if (passcodeError) {
+            setPasscodeError('');
+          }
+        }}
+        onRememberLoginChange={setRememberLogin}
+        onSubmit={handlePasscodeSubmit}
+      />
     );
   }
 
   return (
     <div className="page">
-      <header className="hero-section">
-        <div>
-          <span className="eyebrow">Khánh Thảo</span>
-          <h1>Tài chính Gia Đình</h1>
-          <p className="hero-text">
-            Quản lý tài chính, đầu tư của gia đình.
-          </p>
-        </div>
-        <div className="hero-card mt-2">
-          <div className="row">
-            <div className="hero-card-label">Tổng tài chính hiện tại</div>
-            <button
-              type="button"
-              className="secondary-button logout-button"
-              onClick={handleLogout}
-            >
-              Đăng xuất
-            </button>
-          </div>
-          <div className="hero-card-value">
-            {formatCurrency(dashboard.totals.totalMarketValue)}
-          </div>
-          <div
-            className={`hero-card-profit ${
-              dashboard.totals.totalProfitLoss >= 0 ? 'profit' : 'loss'
-            }`}
-          >
-            {dashboard.totals.totalProfitLoss >= 0 ? '+' : ''}
-            {formatCurrency(dashboard.totals.totalProfitLoss)}
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        totalMarketValue={dashboard.totals.totalMarketValue}
+        totalProfitLoss={dashboard.totals.totalProfitLoss}
+        onLogout={handleLogout}
+      />
 
-      {loading ? (
-        <section className="section">
-          <div className="panel">
-            <h2>Đang tải dữ liệu từ backend...</h2>
-          </div>
-        </section>
-      ) : null}
+      <LoadingSection loading={loading} />
 
-      {errorMessage || successMessage ? (
-        <div className="toast-stack" aria-live="polite" aria-atomic="true">
-          {errorMessage ? (
-            <div className="toast toast-error" role="alert">
-              <strong>{errorMessage}</strong>
-              <button type="button" className="toast-close" onClick={clearToast}>
-                ×
-              </button>
-            </div>
-          ) : null}
+      <ToastStack
+        errorMessage={errorMessage}
+        successMessage={successMessage}
+        onClose={clearToast}
+      />
 
-          {successMessage ? (
-            <div className="toast toast-success" role="status">
-              <strong>{successMessage}</strong>
-              <button type="button" className="toast-close" onClick={clearToast}>
-                ×
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <StatsGrid dashboard={dashboard} trackedAssetsCount={trackedAssetsCount} />
 
-      <section className="stats-grid">
-        <article className="stat-card">
-          <span className="stat-label">Tổng vốn</span>
-          <strong>{formatCurrency(dashboard.totals.totalCost)}</strong>
-        </article>
-        <article className="stat-card">
-          <span className="stat-label">Giá trị thị trường</span>
-          <strong>{formatCurrency(dashboard.totals.totalMarketValue)}</strong>
-        </article>
-        <article className="stat-card">
-          <span className="stat-label">Lãi / lỗ tạm tính</span>
-          <strong
-            className={dashboard.totals.totalProfitLoss >= 0 ? 'profit' : 'loss'}
-          >
-            {dashboard.totals.totalProfitLoss >= 0 ? '+' : ''}
-            {formatCurrency(dashboard.totals.totalProfitLoss)}
-          </strong>
-        </article>
-        <article className="stat-card">
-          <span className="stat-label">Số tài sản đang theo dõi</span>
-          <strong>{trackedAssetsCount}</strong>
-        </article>
-      </section>
+      <CategorySummarySection dashboard={dashboard} />
 
-      <section className="section">
-        <div className="section-heading">
-          <div>
-            <span className="section-kicker">Dashboard</span>
-            <h2>Tổng hợp theo danh mục đầu tư</h2>
-          </div>
-        </div>
+      <PortfolioSection
+        assets={dashboard.assets}
+        latestPrices={visibleLatestPrices}
+      />
 
-        <div className="category-flex">
-          {dashboard.byCategory.map((category) => (
-            <article className="category-card" key={category.categoryCode}>
-              <div className="category-card-header">
-                <h3>{category.categoryName}</h3>
-                <span
-                  className={
-                    category.totalProfitLoss >= 0 ? 'badge positive' : 'badge negative'
-                  }
-                >
-                  {category.totalProfitLoss >= 0 ? 'Đang lãi' : 'Đang lỗ'}
-                </span>
-              </div>
-              <dl className="category-metrics">
-                <div>
-                  <dt>Tổng vốn</dt>
-                  <dd>{formatCurrency(category.totalCost)}</dd>
-                </div>
-                <div>
-                  <dt>Giá trị hiện tại</dt>
-                  <dd>{formatCurrency(category.totalMarketValue)}</dd>
-                </div>
-                <div>
-                  <dt>Lãi / lỗ</dt>
-                  <dd
-                    className={
-                      category.totalProfitLoss >= 0 ? 'profit' : 'loss'
-                    }
-                  >
-                    {category.totalProfitLoss >= 0 ? '+' : ''}
-                    {formatCurrency(category.totalProfitLoss)}
-                  </dd>
-                </div>
-              </dl>
-            </article>
-          ))}
-        </div>
-      </section>
+      <QuickActionsSection
+        canCreateTransaction={transactionAssetOptions.length > 0}
+        canCreatePrice={priceAssetOptions.length > 0}
+        canCreateAsset={categories.length > 0}
+        onOpenTransaction={() => setIsTransactionDialogOpen(true)}
+        onOpenPrice={() => setIsPriceDialogOpen(true)}
+        onOpenAsset={() => setIsAssetDialogOpen(true)}
+      />
 
-      <section className="section">
-        <div className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Danh mục đầu tư</span>
-              <h2>Tài sản đang quản lý</h2>
-            </div>
-          </div>
+      <RecentTransactionsSection
+        transactions={transactions}
+        submitting={submitting}
+        onRequestDelete={setTransactionPendingDelete}
+      />
 
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tài sản</th>
-                  <th>Danh mục</th>
-                  <th>Số lượng</th>
-                  <th>Giá hiện tại</th>
-                  <th>Giá trị</th>
-                  <th>Lãi / lỗ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.assets.map((asset) => (
-                  <tr key={asset.id}>
-                    <td>
-                      <div className="asset-cell">
-                        <strong>{asset.name}</strong>
-                        <span>{asset.symbol}</span>
-                      </div>
-                    </td>
-                    <td>{asset.categoryName}</td>
-                    <td>
-                      <div className="asset-cell">
-                        <strong>
-                          {formatNumber(asset.holdingQuantity)} {asset.unit}
-                        </strong>
-                        <span>Tổng số lượng đang nắm giữ</span>
-                      </div>
-                    </td>
-                    <td>{formatCurrency(asset.latestPrice)}</td>
-                    <td>{formatCurrency(asset.marketValue)}</td>
-                    <td className={asset.profitLoss >= 0 ? 'profit' : 'loss'}>
-                      {asset.profitLoss >= 0 ? '+' : ''}
-                      {formatCurrency(asset.profitLoss)}
-                    </td>
-                  </tr>
-                ))}
-                {dashboard.assets.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>Chưa có tài sản nào trong hệ thống.</td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="panel stack">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Giá hiện tại</span>
-              <h2>Auto hoặc manual</h2>
-            </div>
-          </div>
-
-          <div className="price-list">
-            {visibleLatestPrices.map((item) => (
-              <div className="price-row" key={item.assetId}>
-                <div>
-                  <strong>{item.assetName}</strong>
-                  <p>
-                    {item.symbol} •{' '}
-                    {item.latestPrice
-                      ? formatDateTime(item.latestPrice.capturedAt)
-                      : 'Chưa có giá'}
-                  </p>
-                </div>
-                <div className="price-value">
-                  <strong>
-                    {item.latestPrice
-                      ? formatCurrency(Number(item.latestPrice.price))
-                      : '—'}
-                  </strong>
-                  <span
-                    className={
-                      item.latestPrice?.source === 'AUTO' ? 'badge info' : 'badge'
-                    }
-                  >
-                    {item.latestPrice?.source ?? 'N/A'}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {visibleLatestPrices.length === 0 ? (
-              <p>Không có dữ liệu giá hiện tại cho các danh mục có theo dõi giá.</p>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Thao tác nhanh</span>
-              <h2>Nhập dữ liệu khi cần</h2>
-            </div>
-          </div>
-
-          <div className="actions-row">
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => setIsTransactionDialogOpen(true)}
-              disabled={transactionAssetOptions.length === 0}
-            >
-              Thêm giao dịch
-            </button>
-            <button
-              type="button"
-              className="primary-button secondary-button"
-              onClick={() => setIsPriceDialogOpen(true)}
-              disabled={priceAssetOptions.length === 0}
-            >
-              Cập nhật giá
-            </button>
-            <button
-              type="button"
-              className="primary-button secondary-button"
-              onClick={() => setIsAssetDialogOpen(true)}
-              disabled={categories.length === 0}
-            >
-              Tạo tài sản
-            </button>
-          </div>
-
-          <div className="quick-actions-hint">
-            {transactionAssetOptions.length === 0 ? (
-              <p>Chưa có tài sản nào để nhập giao dịch. Hãy tạo tài sản trước.</p>
-            ) : null}
-            {priceAssetOptions.length === 0 ? (
-              <p>
-                Không có tài sản cần cập nhật giá. Sổ tiết kiệm không dùng mục giá
-                hiện tại.
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">Hoạt động gần đây</span>
-              <h2>Giao dịch mới nhất</h2>
-            </div>
-          </div>
-
-          <div className="activity-list mt-2">
-            {transactions.map((transaction) => (
-              <div className="activity-row" key={transaction.id}>
-                <div className='row'>
-                  <div>
-                    <strong>{transaction.asset.name}</strong>
-                  </div>
-                  <span
-                    className={
-                      transaction.type === 'BUY' ? 'badge positive' : 'badge negative'
-                    }
-                  >
-                    {transaction.asset.category.code === 'SAVING'
-                      ? transaction.type === 'BUY'
-                        ? 'MỞ SỔ'
-                        : 'ĐÓNG SỔ'
-                      : transaction.type}
-                  </span>
-                </div>
-                <div className="activity-meta w-100">
-                  <div>
-                    <strong>
-                      {formatNumber(Number(transaction.quantity))}{' '}
-                      {transaction.asset.category.code === 'SAVING' ? 'gửi @ ' : 'x '}
-                      {transaction.asset.category.code === 'SAVING'
-                        ? `${formatNumber(Number(transaction.price))}%/năm`
-                        : formatCurrency(Number(transaction.price))}
-                    </strong>
-                    <p>
-                      {transaction.asset.symbol} • {formatDateTime(transaction.executedAt)}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="primary-button mt-2"
-                    onClick={() => setTransactionPendingDelete(transaction)}
-                    disabled={submitting}
-                  >
-                    Xóa
-                  </button>
-                </div>
-              </div>
-            ))}
-            {transactions.length === 0 ? <p>Chưa có giao dịch nào.</p> : null}
-          </div>
-        </div>
-      </section>
-
-      {transactionPendingDelete ? (
-        <div
-          className="dialog-overlay"
-          onClick={() => {
-            if (!submitting) {
+      <Suspense fallback={lazyFallback}>
+        {transactionPendingDelete ? (
+          <DeleteTransactionDialog
+            transaction={transactionPendingDelete}
+            submitting={submitting}
+            onClose={() => setTransactionPendingDelete(null)}
+            onConfirm={() => {
+              void handleDeleteTransaction(transactionPendingDelete.id);
               setTransactionPendingDelete(null);
-            }
-          }}
-        >
-          <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="section-heading">
-              <div className='center'>
-                <span className="section-kicker">Xóa giao dịch</span>
-              </div>
-              <button
-                type="button"
-                className="dialog-close"
-                onClick={() => setTransactionPendingDelete(null)}
-                disabled={submitting}
-              >
-                X
-              </button>
-            </div>
+            }}
+          />
+        ) : null}
 
-            <div className="quick-actions-hint mt-2">
-              <p>
-                Bạn có chắc muốn xóa giao dịch của{' '}
-                <strong>{transactionPendingDelete.asset.name}</strong> (
-                {transactionPendingDelete.asset.symbol}) tại thời điểm{' '}
-                <strong>{formatDateTime(transactionPendingDelete.executedAt)}</strong>?
-              </p>
-              <p>Thao tác này không thể hoàn tác.</p>
-            </div>
+        <TransactionDialog
+          open={isTransactionDialogOpen}
+          submitting={submitting}
+          form={transactionForm}
+          assetOptions={transactionAssetOptions}
+          isSavingTransaction={Boolean(isSavingTransaction)}
+          onClose={() => setIsTransactionDialogOpen(false)}
+          onSubmit={handleCreateTransaction}
+          onChange={setTransactionForm}
+        />
 
-            <div className="row mt-2">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setTransactionPendingDelete(null)}
-                disabled={submitting}
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => {
-                  void handleDeleteTransaction(transactionPendingDelete.id);
-                  setTransactionPendingDelete(null);
-                }}
-                disabled={submitting}
-              >
-                Xác nhận xóa
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+        <PriceDialog
+          open={isPriceDialogOpen}
+          submitting={submitting}
+          form={priceForm}
+          assetOptions={priceAssetOptions}
+          isAutoGoldPriceUpdate={Boolean(isAutoGoldPriceUpdate)}
+          onClose={() => setIsPriceDialogOpen(false)}
+          onSubmit={handleCreatePrice}
+          onChange={setPriceForm}
+        />
 
-      {isTransactionDialogOpen ? (
-        <div
-          className="dialog-overlay"
-          onClick={() => {
-            if (!submitting) {
-              setIsTransactionDialogOpen(false);
-            }
-          }}
-        >
-          <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="section-heading mb-2">
-              <div className='center'>
-                <span className="section-kicker">Nhập giao dịch mới</span>
-              </div>
-              <button
-                type="button"
-                className="dialog-close"
-                onClick={() => setIsTransactionDialogOpen(false)}
-                disabled={submitting}
-              >
-                X
-              </button>
-            </div>
-
-            <form className="form-grid mt-2" onSubmit={handleCreateTransaction}>
-              <label>
-                Tài sản
-                <select
-                  value={transactionForm.assetId}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      assetId: event.target.value,
-                    }))
-                  }
-                  disabled={submitting || transactionAssetOptions.length === 0}
-                >
-                  {transactionAssetOptions.length === 0 ? (
-                    <option value="">Chưa có tài sản, hãy tạo mới trước</option>
-                  ) : null}
-                  {transactionAssetOptions.map((asset) => (
-                    <option key={asset.id} value={asset.value}>
-                      {asset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Loại giao dịch
-                <select
-                  value={transactionForm.type}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      type: event.target.value as TransactionType,
-                    }))
-                  }
-                  disabled={submitting}
-                >
-                  <option value="BUY">
-                    {isSavingTransaction ? 'Mở sổ' : 'Mua'}
-                  </option>
-                  <option value="SELL">
-                    {isSavingTransaction ? 'Đóng sổ' : 'Bán'}
-                  </option>
-                </select>
-              </label>
-
-              <label>
-                Số lượng
-                <input
-                  type="number"
-                  min="0"
-                  step="0.0001"
-                  placeholder="0.00"
-                  value={transactionForm.quantity}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      quantity: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              <label>
-                {isSavingTransaction ? 'Lãi suất năm (%)' : 'Giá khớp lệnh'}
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder={isSavingTransaction ? 'Ví dụ: 5.8' : '0'}
-                  value={transactionForm.price}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      price: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-                {!isSavingTransaction && formatCurrencyPreview(transactionForm.price) ? (
-                  <span className="input-preview">
-                    {formatCurrencyPreview(transactionForm.price)}
-                  </span>
-                ) : null}
-              </label>
-
-              <label>
-                Phí giao dịch
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0"
-                  value={transactionForm.fee}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      fee: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                />
-                {formatCurrencyPreview(transactionForm.fee) ? (
-                  <span className="input-preview">
-                    {formatCurrencyPreview(transactionForm.fee)}
-                  </span>
-                ) : null}
-              </label>
-
-              <label>
-                {isSavingTransaction ? 'Ngày mở sổ' : 'Ngày giao dịch'}
-                <input
-                  type="date"
-                  value={transactionForm.executedAt}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      executedAt: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              {isSavingTransaction ? (
-                <label>
-                  Ngày tất toán
-                  <input
-                    type="date"
-                    value={transactionForm.settledAt}
-                    onChange={(event) =>
-                      setTransactionForm((current) => ({
-                        ...current,
-                        settledAt: event.target.value,
-                      }))
-                    }
-                    disabled={submitting}
-                  />
-                </label>
-              ) : null}
-
-              <label className="full-width">
-                Ghi chú
-                <textarea
-                  rows={4}
-                  placeholder={
-                    isSavingTransaction
-                      ? 'Ví dụ: sổ 6 tháng, lĩnh lãi cuối kỳ'
-                      : 'Ví dụ: mua tích lũy dài hạn'
-                  }
-                  value={transactionForm.note}
-                  onChange={(event) =>
-                    setTransactionForm((current) => ({
-                      ...current,
-                      note: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={submitting || transactionAssetOptions.length === 0}
-              >
-                Lưu giao dịch
-              </button>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {isPriceDialogOpen ? (
-        <div
-          className="dialog-overlay"
-          onClick={() => {
-            if (!submitting) {
-              setIsPriceDialogOpen(false);
-            }
-          }}
-        >
-          <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="section-heading">
-              <div>
-                <span className="section-kicker">Giá thị trường</span>
-              </div>
-              <button
-                type="button"
-                className="dialog-close"
-                onClick={() => setIsPriceDialogOpen(false)}
-                disabled={submitting}
-              >
-                X
-              </button>
-            </div>
-
-            <form className="form-grid" onSubmit={handleCreatePrice}>
-              <label>
-                Tài sản
-                <select
-                  value={priceForm.assetId}
-                  onChange={(event) =>
-                    setPriceForm((current) => ({
-                      ...current,
-                      assetId: event.target.value,
-                    }))
-                  }
-                  disabled={submitting || priceAssetOptions.length === 0}
-                >
-                  {priceAssetOptions.length === 0 ? (
-                    <option value="">Không có tài sản cần cập nhật giá</option>
-                  ) : null}
-                  {priceAssetOptions.map((asset) => (
-                    <option key={asset.id} value={asset.value}>
-                      {asset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Nguồn giá
-                <select
-                  value={priceForm.source}
-                  onChange={(event) =>
-                    setPriceForm((current) => ({
-                      ...current,
-                      source: event.target.value as PriceSource,
-                    }))
-                  }
-                  disabled={submitting}
-                >
-                  <option value="AUTO">AUTO</option>
-                  <option value="MANUAL">MANUAL</option>
-                </select>
-              </label>
-
-              <label>
-                Giá hiện tại
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder={
-                    isAutoGoldPriceUpdate ? 'Giá sẽ được lấy tự động từ web vàng' : '0'
-                  }
-                  value={priceForm.price}
-                  onChange={(event) =>
-                    setPriceForm((current) => ({
-                      ...current,
-                      price: event.target.value,
-                    }))
-                  }
-                  disabled={submitting || isAutoGoldPriceUpdate}
-                  required={!isAutoGoldPriceUpdate}
-                />
-                {isAutoGoldPriceUpdate ? (
-                  <span className="input-preview">
-                    Chế độ AUTO sẽ lấy giá mua vàng nhẫn khâu 9999 và tự tính lại dashboard.
-                  </span>
-                ) : formatCurrencyPreview(priceForm.price) ? (
-                  <span className="input-preview">
-                    {formatCurrencyPreview(priceForm.price)}
-                  </span>
-                ) : null}
-              </label>
-
-              <label>
-                Thời điểm ghi nhận
-                <input
-                  type="datetime-local"
-                  value={priceForm.capturedAt}
-                  onChange={(event) =>
-                    setPriceForm((current) => ({
-                      ...current,
-                      capturedAt: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={submitting || priceAssetOptions.length === 0}
-              >
-                Cập nhật giá
-              </button>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {isAssetDialogOpen ? (
-        <div
-          className="dialog-overlay"
-          onClick={() => {
-            if (!submitting) {
-              setIsAssetDialogOpen(false);
-            }
-          }}
-        >
-          <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="section-heading">
-              <div>
-                <span className="section-kicker">Danh mục mới</span>
-                <h2>Thêm tài sản theo dõi</h2>
-              </div>
-              <button
-                type="button"
-                className="dialog-close"
-                onClick={() => setIsAssetDialogOpen(false)}
-                disabled={submitting}
-              >
-                X
-              </button>
-            </div>
-
-            <form className="form-grid" onSubmit={handleCreateAsset}>
-              <label>
-                Danh mục đầu tư
-                <select
-                  value={assetForm.categoryCode}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      categoryCode: event.target.value as CategoryCode,
-                    }))
-                  }
-                  disabled={submitting || categories.length === 0}
-                >
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.code}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Mã tài sản
-                <input
-                  type="text"
-                  placeholder="BTC / FPT / SJC..."
-                  value={assetForm.symbol}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      symbol: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              <label>
-                Tên tài sản
-                <input
-                  type="text"
-                  placeholder="Bitcoin, Vàng SJC..."
-                  value={assetForm.name}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              <label>
-                Đơn vị
-                <input
-                  type="text"
-                  placeholder="coin, chỉ, cổ phiếu..."
-                  value={assetForm.unit}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      unit: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                  required
-                />
-              </label>
-
-              <label className="full-width">
-                Ghi chú
-                <textarea
-                  rows={3}
-                  placeholder="Mô tả thêm về tài sản"
-                  value={assetForm.notes}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                  disabled={submitting}
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="primary-button"
-                disabled={submitting || categories.length === 0}
-              >
-                Tạo tài sản
-              </button>
-            </form>
-          </div>
-        </div>
-      ) : null}
+        <AssetDialog
+          open={isAssetDialogOpen}
+          submitting={submitting}
+          form={assetForm}
+          categories={categories}
+          onClose={() => setIsAssetDialogOpen(false)}
+          onSubmit={handleCreateAsset}
+          onChange={setAssetForm}
+        />
+      </Suspense>
     </div>
   );
 }
