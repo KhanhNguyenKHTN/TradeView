@@ -3,8 +3,9 @@
 echo "trigger auto deploy!"
 echo "unzio and install package"
 
+cd /home/data/TaiChinh
 unzip deploy_temp.zip
-cd deploy_temp/backend
+cd /home/data/TaiChinh/deploy/backend
 npm run prod
 
 echo "Stop server!"
@@ -23,4 +24,5 @@ cd /home/data/TaiChinh/deploy/backend
 pm2 start ecosystem.config.js
 
 echo "Clean up data..."
+cd /home/data/TaiChinh
 rm -rf deploy_temp.zip
