@@ -144,6 +144,6 @@ vite.config.ts.timestamp-*
 
 # Deploy
 deploy
-# deploy_temp
-# deploy_temp.zip
+deploy_temp
+deploy_temp.zip
 *.zip

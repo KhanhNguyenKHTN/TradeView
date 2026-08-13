@@ -49,7 +49,7 @@ function PushNotificationSection({
       <div className="panel">
         <div className="section-heading">
           <div>
-            <span className="section-kicker">Thông báo trên iPhone</span>
+            <span className="section-kicker">Thông báo</span>
             <h2>Web Push cho Safari / Home Screen</h2>
           </div>
         </div>
@@ -59,8 +59,10 @@ function PushNotificationSection({
             Trạng thái: <strong>{getPushPermissionLabel(pushPermission)}</strong>
           </p>
           <p>
-            iPhone/iPad: mở bằng Safari, chọn <strong>Add to Home Screen</strong>, mở lại từ
-            icon ngoài màn hình chính, rồi bấm nút bên dưới để cấp quyền thông báo.
+            iPhone/iPad: mở bằng Safari, chọn <strong>Chia sẻ - Thêm vào Màn hình chính</strong>
+          </p>
+          <p>
+            Mở lại từ <strong>icon ngoài màn hình chính</strong>, rồi bấm nút bên dưới để cấp quyền thông báo.
           </p>
           <p>
             Android/Windows: chỉ cần dùng trình duyệt có hỗ trợ Web Push và cấp quyền thông báo.

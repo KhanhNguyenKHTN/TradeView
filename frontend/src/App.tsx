@@ -1188,20 +1188,6 @@ function App() {
 
   return (
     <div className="page">
-      <PushNotificationSection
-        pushPermission={pushPermission}
-        isEnablingPush={isEnablingPush}
-        isSendingTestPush={isSendingTestPush}
-        lastPushErrorDetails={lastPushErrorDetails}
-        pushDebugLog={pushDebugLog}
-        getPushPermissionLabel={getPushPermissionLabel}
-        isIosDevice={isIosDevice}
-        isStandaloneDisplayMode={isStandaloneDisplayMode}
-        onEnablePushNotifications={handleEnablePushNotifications}
-        onShowLocalNotification={handleShowLocalNotification}
-        onSendTestPushNotification={handleSendTestPushNotification}
-      />
-
       <AppHeader
         activePage={activePage}
         totalMarketValue={dashboard.totals.totalMarketValue}
@@ -1209,6 +1195,21 @@ function App() {
         onNavigate={setActivePage}
         onLogout={handleLogout}
         showFinancialSummary={activePage === 'DASHBOARD'}
+        notificationSection={
+          <PushNotificationSection
+            pushPermission={pushPermission}
+            isEnablingPush={isEnablingPush}
+            isSendingTestPush={isSendingTestPush}
+            lastPushErrorDetails={lastPushErrorDetails}
+            pushDebugLog={pushDebugLog}
+            getPushPermissionLabel={getPushPermissionLabel}
+            isIosDevice={isIosDevice}
+            isStandaloneDisplayMode={isStandaloneDisplayMode}
+            onEnablePushNotifications={handleEnablePushNotifications}
+            onShowLocalNotification={handleShowLocalNotification}
+            onSendTestPushNotification={handleSendTestPushNotification}
+          />
+        }
       />
 
       <LoadingSection loading={loading} />

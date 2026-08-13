@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { displayPrice, formatCurrency, formatDateTime, formatNumber } from '../utils/appFormatters';
 import type {
   AppPage,
@@ -13,6 +14,7 @@ type AppHeaderProps = {
   onNavigate: (page: AppPage) => void;
   onLogout: () => void;
   showFinancialSummary: boolean;
+  notificationSection?: ReactNode;
 };
 
 export function AppHeader({
@@ -22,6 +24,7 @@ export function AppHeader({
   onNavigate,
   onLogout,
   showFinancialSummary,
+  notificationSection,
 }: AppHeaderProps) {
   return (
     <header className="hero-section">
@@ -41,6 +44,7 @@ export function AppHeader({
             <span className="logout-button-label">Đăng xuất</span>
           </button>
         </div>
+        {notificationSection}
         <h1>Tài chính Gia Đình</h1>
         <p className="hero-text">
           Quản lý tài chính, đầu tư của gia đình và theo dõi các task cần làm.

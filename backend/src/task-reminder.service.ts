@@ -13,8 +13,6 @@ export class TaskReminderService {
   @Cron('0 * * * * *')
   async handleDueTaskReminders() {
     const now = new Date();
-    console.log('run job: ', now);
-
     const dueTasks = await this.prisma.task.findMany({
       where: {
         status: {
