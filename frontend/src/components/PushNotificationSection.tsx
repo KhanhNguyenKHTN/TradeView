@@ -40,7 +40,7 @@ function PushNotificationSection({
   void onShowLocalNotification;
   void onSendTestPushNotification;
 
-  if (pushPermission === 'unsupported' || pushPermission === 'granted') {
+  if (pushPermission === 'granted') {
     return null;
   }
 
@@ -69,46 +69,48 @@ function PushNotificationSection({
           </p>
         </div>
 
-        <div className="row mt-2">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => {
-              void onEnablePushNotifications();
-            }}
-            disabled={isEnablingPush}
-          >
-            {isEnablingPush ? 'Đang bật thông báo...' : 'Bật thông báo'}
-          </button>
+        {pushPermission !== 'unsupported' && (
+          <div className="row mt-2">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                void onEnablePushNotifications();
+              }}
+              disabled={isEnablingPush}
+            >
+              {isEnablingPush ? 'Đang bật thông báo...' : 'Bật thông báo'}
+            </button>
 
-          {/* <button
-            type="button"
-            className="secondary-button"
-            onClick={() => {
-              onShowLocalNotification();
-            }}
-            disabled={
-              pushPermission === 'unsupported' || pushPermission !== 'granted'
-            }
-          >
-            Hiện thông báo cục bộ
-          </button>
+            {/* <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                onShowLocalNotification();
+              }}
+              disabled={
+                pushPermission === 'unsupported' || pushPermission !== 'granted'
+              }
+            >
+              Hiện thông báo cục bộ
+            </button>
 
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => {
-              void onSendTestPushNotification();
-            }}
-            disabled={
-              isSendingTestPush ||
-              pushPermission === 'unsupported' ||
-              pushPermission !== 'granted'
-            }
-          >
-            {isSendingTestPush ? 'Đang gửi test...' : 'Gửi thông báo test'}
-          </button> */}
-        </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                void onSendTestPushNotification();
+              }}
+              disabled={
+                isSendingTestPush ||
+                pushPermission === 'unsupported' ||
+                pushPermission !== 'granted'
+              }
+            >
+              {isSendingTestPush ? 'Đang gửi test...' : 'Gửi thông báo test'}
+            </button> */}
+          </div>
+        )}
 
         {/* <div className="quick-actions-hint mt-2">
           <p>
