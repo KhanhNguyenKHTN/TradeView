@@ -6,15 +6,18 @@ import {
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import * as webpush from 'web-push';
 import {
   AssetCategoryCode,
   PriceSource,
   Prisma,
-  PrismaClient,
+  TaskPriority,
+  TaskStatus,
   TransactionType,
 } from '@prisma/client';
 import { PrismaService } from './prisma.service';
@@ -43,6 +46,40 @@ type CreatePriceDto = {
   price: number;
   source?: PriceSource;
   capturedAt: string;
+};
+
+type CreateTaskDto = {
+  title: string;
+  description: string;
+  note?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  dueDate: string;
+  owner: string;
+  category: string;
+  isFinancialPlan?: boolean;
+  financialTargetAmount?: number;
+  financialCurrentAmount?: number;
+  progress?: number;
+};
+
+type UpdateTaskDto = Partial<CreateTaskDto>;
+
+type PushSubscriptionDto = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  userAgent?: string;
+  platform?: string;
+};
+
+type SendPushNotificationDto = {
+  title: string;
+  body: string;
+  url?: string;
 };
 
 @Controller('api')
@@ -255,6 +292,339 @@ export class FinanceController {
     }));
   }
 
+  @Get('tasks')
+  async getTasks() {
+    const tasks = await this.prisma.task.findMany({
+      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { id: 'desc' }],
+    });
+
+    return tasks.map((task) => this.serializeTask(task));
+  }
+
+  @Get('tasks/summary')
+  async getTaskSummary() {
+    const tasks = await this.prisma.task.findMany();
+
+    const inProgressTasks = tasks.filter(
+      (task) => task.status === TaskStatus.IN_PROGRESS,
+    ).length;
+    const completedTasks = tasks.filter(
+      (task) => task.status === TaskStatus.DONE,
+    ).length;
+    const financialTasks = tasks.filter((task) => task.isFinancialPlan);
+    const now = new Date();
+
+    const dueSoonTasks = tasks.filter((task) => {
+      if (task.status === TaskStatus.DONE) {
+        return false;
+      }
+
+      const diffTime = task.dueDate.getTime() - now.getTime();
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+      return diffDays <= 7;
+    }).length;
+
+    const averageFinancialProgress =
+      financialTasks.length > 0
+        ? Math.round(
+            financialTasks.reduce((sum, task) => sum + task.progress, 0) /
+              financialTasks.length,
+          )
+        : 0;
+
+    return {
+      totalTasks: tasks.length,
+      inProgressTasks,
+      dueSoonTasks,
+      completedTasks,
+      financialPlanningTasks: financialTasks.length,
+      averageFinancialProgress,
+    };
+  }
+
+  @Post('tasks')
+  async createTask(@Body() body: CreateTaskDto) {
+    return this.serializeTask(
+      await this.prisma.task.create({
+        data: {
+          title: body.title.trim(),
+          description: body.description.trim(),
+          note: body.note?.trim() || null,
+          status: body.status ?? TaskStatus.TODO,
+          priority: body.priority ?? TaskPriority.MEDIUM,
+          dueDate: new Date(body.dueDate),
+          owner: body.owner.trim(),
+          category: body.category.trim(),
+          isFinancialPlan: body.isFinancialPlan ?? false,
+          financialTargetAmount: this.normalizeTaskAmount(
+            body.isFinancialPlan ? body.financialTargetAmount ?? 0 : 0,
+          ),
+          financialCurrentAmount: this.normalizeTaskAmount(
+            body.isFinancialPlan ? body.financialCurrentAmount ?? 0 : 0,
+          ),
+          progress: this.calculateTaskProgress(
+            body.isFinancialPlan ?? false,
+            body.financialTargetAmount ?? 0,
+            body.financialCurrentAmount ?? 0,
+            body.progress,
+          ),
+          dueReminderSentAt: null,
+        },
+      }),
+    );
+  }
+
+  @Patch('tasks/:id')
+  async updateTask(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateTaskDto,
+  ) {
+    const existingTask = await this.prisma.task.findUnique({
+      where: { id },
+    });
+
+    if (!existingTask) {
+      throw new Error(`Task ${id} not found`);
+    }
+
+    const data: Prisma.TaskUncheckedUpdateInput = {};
+
+    if (body.title !== undefined) {
+      data.title = body.title.trim();
+    }
+
+    if (body.description !== undefined) {
+      data.description = body.description.trim();
+    }
+
+    if (body.note !== undefined) {
+      data.note = body.note.trim() || null;
+    }
+
+    if (body.status !== undefined) {
+      data.status = body.status;
+
+      if (
+        existingTask.status === TaskStatus.DONE &&
+        body.status !== TaskStatus.DONE
+      ) {
+        data.dueReminderSentAt = null;
+      }
+    }
+
+    if (body.priority !== undefined) {
+      data.priority = body.priority;
+    }
+
+    if (body.dueDate !== undefined) {
+      data.dueDate = new Date(body.dueDate);
+      data.dueReminderSentAt = null;
+    }
+
+    if (body.owner !== undefined) {
+      data.owner = body.owner.trim();
+    }
+
+    if (body.category !== undefined) {
+      data.category = body.category.trim();
+    }
+
+    const nextIsFinancialPlan = body.isFinancialPlan ?? existingTask.isFinancialPlan;
+    const nextFinancialTargetAmount =
+      body.financialTargetAmount !== undefined
+        ? body.financialTargetAmount
+        : Number((existingTask as { financialTargetAmount?: Prisma.Decimal | number | null }).financialTargetAmount ?? 0);
+    const nextFinancialCurrentAmount =
+      body.financialCurrentAmount !== undefined
+        ? body.financialCurrentAmount
+        : Number((existingTask as { financialCurrentAmount?: Prisma.Decimal | number | null }).financialCurrentAmount ?? 0);
+
+    if (body.isFinancialPlan !== undefined) {
+      data.isFinancialPlan = body.isFinancialPlan;
+    }
+
+    if (body.financialTargetAmount !== undefined || !nextIsFinancialPlan) {
+      (data as Record<string, unknown>).financialTargetAmount = this.normalizeTaskAmount(
+        nextIsFinancialPlan ? nextFinancialTargetAmount : 0,
+      );
+    }
+
+    if (body.financialCurrentAmount !== undefined || !nextIsFinancialPlan) {
+      (data as Record<string, unknown>).financialCurrentAmount = this.normalizeTaskAmount(
+        nextIsFinancialPlan ? nextFinancialCurrentAmount : 0,
+      );
+    }
+
+    if (
+      body.progress !== undefined ||
+      body.isFinancialPlan !== undefined ||
+      body.financialTargetAmount !== undefined ||
+      body.financialCurrentAmount !== undefined
+    ) {
+      data.progress = this.calculateTaskProgress(
+        nextIsFinancialPlan,
+        nextFinancialTargetAmount,
+        nextFinancialCurrentAmount,
+        body.progress,
+      );
+    }
+
+    return this.serializeTask(
+      await this.prisma.task.update({
+        where: { id },
+        data,
+      }),
+    );
+  }
+
+  @Delete('tasks/:id')
+  async deleteTask(@Param('id', ParseIntPipe) id: number) {
+    return this.prisma.task.delete({
+      where: { id },
+    });
+  }
+
+  @Post('push-subscriptions')
+  async savePushSubscription(@Body() body: PushSubscriptionDto) {
+    this.ensureWebPushConfigured();
+
+    if (!body.endpoint?.trim() || !body.keys?.p256dh?.trim() || !body.keys?.auth?.trim()) {
+      throw new BadRequestException('Push subscription không hợp lệ.');
+    }
+
+    const endpoint = body.endpoint.trim();
+
+    return this.prisma.pushSubscription.upsert({
+      where: {
+        endpoint,
+      },
+      update: {
+        p256dh: body.keys.p256dh.trim(),
+        auth: body.keys.auth.trim(),
+        expirationTime:
+          body.expirationTime === null || body.expirationTime === undefined
+            ? null
+            : BigInt(Math.trunc(body.expirationTime)),
+        userAgent: body.userAgent?.trim() || null,
+        platform: body.platform?.trim() || null,
+        isActive: true,
+        lastUsedAt: new Date(),
+      },
+      create: {
+        endpoint,
+        p256dh: body.keys.p256dh.trim(),
+        auth: body.keys.auth.trim(),
+        expirationTime:
+          body.expirationTime === null || body.expirationTime === undefined
+            ? null
+            : BigInt(Math.trunc(body.expirationTime)),
+        userAgent: body.userAgent?.trim() || null,
+        platform: body.platform?.trim() || null,
+        isActive: true,
+        lastUsedAt: new Date(),
+      },
+    });
+  }
+
+  @Get('push-public-key')
+  getPushPublicKey() {
+    const { publicKey } = this.getValidatedWebPushConfig();
+
+    return { publicKey };
+  }
+
+  @Post('push-notifications/send')
+  async sendPushNotification(@Body() body: SendPushNotificationDto) {
+    this.ensureWebPushConfigured();
+
+    const title = body.title?.trim();
+    const messageBody = body.body?.trim();
+
+    if (!title || !messageBody) {
+      throw new BadRequestException('Tiêu đề và nội dung thông báo là bắt buộc.');
+    }
+
+    const subscriptions = await this.prisma.pushSubscription.findMany({
+      where: {
+        isActive: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    if (subscriptions.length === 0) {
+      return {
+        sent: 0,
+        failed: 0,
+        total: 0,
+      };
+    }
+
+    const payload = JSON.stringify({
+      title,
+      body: messageBody,
+      url: body.url?.trim() || '/',
+    });
+
+    let sent = 0;
+    let failed = 0;
+
+    await Promise.all(
+      subscriptions.map(async (subscription) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: subscription.endpoint,
+              expirationTime: subscription.expirationTime
+                ? Number(subscription.expirationTime)
+                : null,
+              keys: {
+                p256dh: subscription.p256dh,
+                auth: subscription.auth,
+              },
+            },
+            payload,
+          );
+
+          sent += 1;
+
+          await this.prisma.pushSubscription.update({
+            where: { id: subscription.id },
+            data: {
+              lastUsedAt: new Date(),
+              isActive: true,
+            },
+          });
+        } catch (error) {
+          failed += 1;
+
+          const statusCode =
+            typeof error === 'object' &&
+            error !== null &&
+            'statusCode' in error &&
+            typeof (error as { statusCode?: unknown }).statusCode === 'number'
+              ? ((error as { statusCode: number }).statusCode)
+              : null;
+
+          if (statusCode === 404 || statusCode === 410) {
+            await this.prisma.pushSubscription.update({
+              where: { id: subscription.id },
+              data: {
+                isActive: false,
+              },
+            });
+          }
+        }
+      }),
+    );
+
+    return {
+      sent,
+      failed,
+      total: subscriptions.length,
+    };
+  }
+
   @Get('dashboard')
   async getDashboard() {
     const assets = await this.prisma.asset.findMany({
@@ -397,6 +767,109 @@ export class FinanceController {
     }
 
     return parsedValue * 1000;
+  }
+
+  private normalizeTaskProgress(value: number) {
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+
+  private normalizeTaskAmount(value: number) {
+    if (!Number.isFinite(value) || Number.isNaN(value)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.round(value * 100) / 100);
+  }
+
+  private ensureWebPushConfigured() {
+    const { publicKey, privateKey, subject } = this.getValidatedWebPushConfig(true);
+
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+  }
+
+  private getValidatedWebPushConfig(requirePrivateKey = false) {
+    const publicKey = process.env.WEB_PUSH_PUBLIC_KEY?.trim();
+    const privateKey = process.env.WEB_PUSH_PRIVATE_KEY?.trim();
+    const subject =
+      process.env.WEB_PUSH_SUBJECT?.trim() || 'mailto:admin@tradeview.local';
+
+    if (!publicKey) {
+      throw new BadRequestException('WEB_PUSH_PUBLIC_KEY chưa được cấu hình.');
+    }
+
+    if (!this.isValidBase64UrlValue(publicKey) || publicKey.length < 60) {
+      throw new BadRequestException(
+        'WEB_PUSH_PUBLIC_KEY không hợp lệ. Giá trị phải là VAPID public key chuẩn base64url.',
+      );
+    }
+
+    if (requirePrivateKey) {
+      if (!privateKey) {
+        throw new BadRequestException('WEB_PUSH_PRIVATE_KEY chưa được cấu hình.');
+      }
+
+      if (!this.isValidBase64UrlValue(privateKey) || privateKey.length < 40) {
+        throw new BadRequestException(
+          'WEB_PUSH_PRIVATE_KEY không hợp lệ. Giá trị phải là VAPID private key chuẩn base64url.',
+        );
+      }
+    }
+
+    return {
+      publicKey,
+      privateKey: privateKey ?? '',
+      subject,
+    };
+  }
+
+  private isValidBase64UrlValue(value: string) {
+    return /^[A-Za-z0-9_-]+$/.test(value);
+  }
+
+  private calculateTaskProgress(
+    isFinancialPlan: boolean,
+    financialTargetAmount: number,
+    financialCurrentAmount: number,
+    manualProgress?: number,
+  ) {
+    if (!isFinancialPlan) {
+      return 0;
+    }
+
+    const normalizedTarget = this.normalizeTaskAmount(financialTargetAmount);
+    const normalizedCurrent = this.normalizeTaskAmount(financialCurrentAmount);
+
+    if (normalizedTarget > 0) {
+      return this.normalizeTaskProgress((normalizedCurrent / normalizedTarget) * 100);
+    }
+
+    return this.normalizeTaskProgress(manualProgress ?? 0);
+  }
+
+  private serializeTask(task: {
+    id: number;
+    title: string;
+    description: string;
+    note: string | null;
+    status: TaskStatus;
+    priority: TaskPriority;
+    dueDate: Date;
+    owner: string;
+    category: string;
+    isFinancialPlan: boolean;
+    progress: number;
+    createdAt: Date;
+    updatedAt: Date;
+    financialTargetAmount?: Prisma.Decimal | number | null;
+    financialCurrentAmount?: Prisma.Decimal | number | null;
+  }) {
+    return {
+      ...task,
+      note: task.note ?? '',
+      dueDate: task.dueDate.toISOString(),
+      financialTargetAmount: Number(task.financialTargetAmount ?? 0),
+      financialCurrentAmount: Number(task.financialCurrentAmount ?? 0),
+    };
   }
 
   private calculateAssetSummary(

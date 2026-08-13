@@ -7,6 +7,10 @@ import type {
   LatestTransaction,
   PriceFormState,
   PriceSource,
+  TaskFormValues,
+  TaskItem,
+  TaskPriority,
+  TaskStatus,
   TransactionFormState,
   TransactionType,
 } from '../types/app';
@@ -17,6 +21,26 @@ type DeleteTransactionDialogProps = {
   submitting: boolean;
   onClose: () => void;
   onConfirm: () => void;
+};
+
+type DeleteTaskDialogProps = {
+  open: boolean;
+  task: TaskItem | null;
+  submitting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+};
+
+type TaskStatusPriorityDialogProps = {
+  open: boolean;
+  task: TaskItem | null;
+  submitting: boolean;
+  status: TaskStatus;
+  priority: TaskPriority;
+  onClose: () => void;
+  onStatusChange: (status: TaskStatus) => void;
+  onPriorityChange: (priority: TaskPriority) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
 export function DeleteTransactionDialog({
@@ -455,6 +479,468 @@ type AssetDialogProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onChange: (updater: (current: AssetFormState) => AssetFormState) => void;
 };
+
+const taskStatusOptions: Array<{ value: TaskStatus; label: string }> = [
+  { value: 'TODO', label: 'Cần làm' },
+  { value: 'IN_PROGRESS', label: 'Đang làm' },
+  { value: 'DONE', label: 'Hoàn thành' },
+  { value: 'BLOCKED', label: 'Tạm dừng' },
+];
+
+const taskPriorityOptions: Array<{ value: TaskPriority; label: string }> = [
+  { value: 'LOW', label: 'Thấp' },
+  { value: 'MEDIUM', label: 'Trung bình' },
+  { value: 'HIGH', label: 'Cao' },
+  { value: 'URGENT', label: 'Khẩn cấp' },
+];
+
+type TaskDialogProps = {
+  open: boolean;
+  submitting: boolean;
+  title: string;
+  submitLabel: string;
+  form: TaskFormValues;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onChange: (updater: (current: TaskFormValues) => TaskFormValues) => void;
+};
+
+export function TaskDialog({
+  open,
+  submitting,
+  title,
+  submitLabel,
+  form,
+  onClose,
+  onSubmit,
+  onChange,
+}: TaskDialogProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="dialog-overlay"
+      onClick={() => {
+        if (!submitting) {
+          onClose();
+        }
+      }}
+    >
+      <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="section-heading mb-2">
+          <div>
+            <span className="section-kicker">{title}</span>
+          </div>
+          <button
+            type="button"
+            className="dialog-close"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            X
+          </button>
+        </div>
+
+        <form className="form-grid mt-2" onSubmit={onSubmit}>
+          <label>
+            Tên task
+            <input
+              type="text"
+              placeholder="Ví dụ: Chuẩn bị ngân sách tháng tới"
+              value={form.title}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              disabled={submitting}
+              required
+            />
+          </label>
+
+          <label>
+            Nhóm task
+            <input
+              type="text"
+              placeholder="Ví dụ: Kế hoạch tài chính"
+              value={form.category}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  category: event.target.value,
+                }))
+              }
+              disabled={submitting}
+              required
+            />
+          </label>
+
+          <label>
+            Người phụ trách
+            <input
+              type="text"
+              placeholder="Ví dụ: Khánh"
+              value={form.owner}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  owner: event.target.value,
+                }))
+              }
+              disabled={submitting}
+              required
+            />
+          </label>
+
+          <label>
+            Hạn hoàn thành
+            <input
+              type="datetime-local"
+              value={form.dueDate}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  dueDate: event.target.value,
+                }))
+              }
+              disabled={submitting}
+              required
+            />
+          </label>
+
+          <label>
+            Trạng thái
+            <select
+              value={form.status}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  status: event.target.value as TaskStatus,
+                }))
+              }
+              disabled={submitting}
+            >
+              {taskStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Ưu tiên
+            <select
+              value={form.priority}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  priority: event.target.value as TaskPriority,
+                }))
+              }
+              disabled={submitting}
+            >
+              {taskPriorityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="full-width">
+            Mô tả
+            <textarea
+              rows={3}
+              placeholder="Mô tả ngắn gọn task cần thực hiện..."
+              value={form.description}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
+              disabled={submitting}
+            />
+          </label>
+
+          <label className="full-width">
+            Ghi chú
+            <textarea
+              rows={4}
+              placeholder="Cập nhật tình hình xử lý task..."
+              value={form.note}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  note: event.target.value,
+                }))
+              }
+              disabled={submitting}
+            />
+          </label>
+
+          <label>
+            Kế hoạch tài chính
+            <select
+              value={form.isFinancialPlan ? 'YES' : 'NO'}
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  isFinancialPlan: event.target.value === 'YES',
+                  financialTargetAmount:
+                    event.target.value === 'YES'
+                      ? current.financialTargetAmount || '0'
+                      : '0',
+                  financialCurrentAmount:
+                    event.target.value === 'YES'
+                      ? current.financialCurrentAmount || '0'
+                      : '0',
+                  progress: event.target.value === 'YES' ? current.progress || '0' : '0',
+                }))
+              }
+              disabled={submitting}
+            >
+              <option value="NO">Không</option>
+              <option value="YES">Có</option>
+            </select>
+          </label>
+
+          {form.isFinancialPlan ? (
+            <>
+              <label>
+                Mục tiêu tài chính
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.financialTargetAmount}
+                  onChange={(event) =>
+                    onChange((current) => {
+                      const financialTargetAmount = event.target.value;
+                      const target = Number(financialTargetAmount || 0);
+                      const currentAmount = Number(current.financialCurrentAmount || 0);
+                      const progress =
+                        target > 0
+                          ? String(Math.min(100, Math.max(0, Math.round((currentAmount / target) * 100))))
+                          : '0';
+
+                      return {
+                        ...current,
+                        financialTargetAmount,
+                        progress,
+                      };
+                    })
+                  }
+                  disabled={submitting}
+                />
+              </label>
+
+              <label>
+                Số tiền hiện có
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.financialCurrentAmount}
+                  onChange={(event) =>
+                    onChange((current) => {
+                      const financialCurrentAmount = event.target.value;
+                      const target = Number(current.financialTargetAmount || 0);
+                      const currentAmount = Number(financialCurrentAmount || 0);
+                      const progress =
+                        target > 0
+                          ? String(Math.min(100, Math.max(0, Math.round((currentAmount / target) * 100))))
+                          : '0';
+
+                      return {
+                        ...current,
+                        financialCurrentAmount,
+                        progress,
+                      };
+                    })
+                  }
+                  disabled={submitting}
+                />
+              </label>
+
+              <label>
+                Tiến độ (%)
+                <input type="number" value={form.progress} disabled />
+              </label>
+            </>
+          ) : (
+            <div />
+          )}
+
+          <div>
+          </div>
+          <button type="submit" className="primary-button" disabled={submitting}>
+            {submitLabel}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export function DeleteTaskDialog({
+  open,
+  task,
+  submitting,
+  onClose,
+  onConfirm,
+}: DeleteTaskDialogProps) {
+  if (!open || !task) {
+    return null;
+  }
+
+  return (
+    <div
+      className="dialog-overlay"
+      onClick={() => {
+        if (!submitting) {
+          onClose();
+        }
+      }}
+    >
+      <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="section-heading">
+          <div className="center">
+            <span className="section-kicker">Xóa task</span>
+          </div>
+          <button
+            type="button"
+            className="dialog-close"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            X
+          </button>
+        </div>
+
+        <div className="quick-actions-hint mt-2">
+          <p>
+            Bạn có chắc muốn xóa task <strong>{task.title}</strong>?
+          </p>
+          <p>Thao tác này không thể hoàn tác.</p>
+        </div>
+
+        <div className="row mt-2">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={onConfirm}
+            disabled={submitting}
+          >
+            Xác nhận xóa
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function TaskStatusPriorityDialog({
+  open,
+  task,
+  submitting,
+  status,
+  priority,
+  onClose,
+  onStatusChange,
+  onPriorityChange,
+  onSubmit,
+}: TaskStatusPriorityDialogProps) {
+  if (!open || !task) {
+    return null;
+  }
+
+  return (
+    <div
+      className="dialog-overlay"
+      onClick={() => {
+        if (!submitting) {
+          onClose();
+        }
+      }}
+    >
+      <div className="dialog-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="section-heading mb-2">
+          <div>
+            <span className="section-kicker">Cập nhật nhanh</span>
+            <h2>{task.title}</h2>
+          </div>
+          <button
+            type="button"
+            className="dialog-close"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            X
+          </button>
+        </div>
+
+        <form className="form-grid mt-2" onSubmit={onSubmit}>
+          <label>
+            Trạng thái
+            <select
+              value={status}
+              onChange={(event) => onStatusChange(event.target.value as TaskStatus)}
+              disabled={submitting}
+            >
+              {taskStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Ưu tiên
+            <select
+              value={priority}
+              onChange={(event) => onPriorityChange(event.target.value as TaskPriority)}
+              disabled={submitting}
+            >
+              {taskPriorityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="row full-width">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+              disabled={submitting}
+            >
+              Hủy
+            </button>
+            <button type="submit" className="primary-button" disabled={submitting}>
+              Lưu cập nhật
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export function AssetDialog({
   open,

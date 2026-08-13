@@ -104,3 +104,68 @@ export type AssetOption = {
   value: string;
   label: string;
 };
+
+export type AppPage = 'DASHBOARD' | 'TASKS';
+
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED';
+
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export type TaskViewFilter = 'ALL' | TaskStatus;
+export type TaskViewMode = 'CARD' | 'GRID';
+
+export type TaskItem = {
+  id: number;
+  title: string;
+  description: string;
+  note: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string;
+  owner: string;
+  category: string;
+  isFinancialPlan: boolean;
+  financialTargetAmount: number;
+  financialCurrentAmount: number;
+  progress: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskSummary = {
+  totalTasks: number;
+  inProgressTasks: number;
+  dueSoonTasks: number;
+  completedTasks: number;
+  financialPlanningTasks: number;
+  averageFinancialProgress: number;
+};
+
+export type TaskFormValues = {
+  title: string;
+  description: string;
+  note: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string;
+  owner: string;
+  category: string;
+  isFinancialPlan: boolean;
+  financialTargetAmount: string;
+  financialCurrentAmount: string;
+  progress: string;
+};
+
+export type TaskEditableField =
+  | 'title'
+  | 'description'
+  | 'note'
+  | 'status'
+  | 'priority'
+  | 'dueDate'
+  | 'owner'
+  | 'category'
+  | 'isFinancialPlan'
+  | 'financialTargetAmount'
+  | 'financialCurrentAmount'
+  | 'progress';

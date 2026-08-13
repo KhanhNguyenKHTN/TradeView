@@ -1,20 +1,27 @@
 import { displayPrice, formatCurrency, formatDateTime, formatNumber } from '../utils/appFormatters';
 import type {
+  AppPage,
   DashboardResponse,
   LatestPrice,
   LatestTransaction,
 } from '../types/app';
 
 type AppHeaderProps = {
+  activePage: AppPage;
   totalMarketValue: number;
   totalProfitLoss: number;
+  onNavigate: (page: AppPage) => void;
   onLogout: () => void;
+  showFinancialSummary: boolean;
 };
 
 export function AppHeader({
+  activePage,
   totalMarketValue,
   totalProfitLoss,
+  onNavigate,
   onLogout,
+  showFinancialSummary,
 }: AppHeaderProps) {
   return (
     <header className="hero-section">
@@ -25,23 +32,70 @@ export function AppHeader({
             type="button"
             className="absolute secondary-button logout-button"
             onClick={onLogout}
+            aria-label="Đăng xuất"
+            title="Đăng xuất"
           >
-            Đăng xuất
+            <span className="logout-button-icon" aria-hidden="true">
+              ⍈
+            </span>
+            <span className="logout-button-label">Đăng xuất</span>
           </button>
         </div>
         <h1>Tài chính Gia Đình</h1>
-        <p className="hero-text">Quản lý tài chính, đầu tư của gia đình.</p>
-      </div>
-      <div className="hero-card mt-2">
-        <div className="row">
-          <div className="hero-card-label">Tổng tài chính hiện tại</div>
+        <p className="hero-text">
+          Quản lý tài chính, đầu tư của gia đình và theo dõi các task cần làm.
+        </p>
+        <div className="header-nav" role="navigation" aria-label="Điều hướng chức năng">
+          <ul className="header-nav-tabs" role="tablist" aria-label="Chuyển chức năng">
+            <li
+              className={`header-nav-tab-item ${
+                activePage === 'DASHBOARD' ? 'header-nav-tab-item-active' : ''
+              }`}
+              role="tab"
+              aria-selected={activePage === 'DASHBOARD'}
+              tabIndex={0}
+              onClick={() => onNavigate('DASHBOARD')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onNavigate('DASHBOARD');
+                }
+              }}
+            >
+              Dashboard tài chính
+            </li>
+            <li
+              className={`header-nav-tab-item ${
+                activePage === 'TASKS' ? 'header-nav-tab-item-active' : ''
+              }`}
+              role="tab"
+              aria-selected={activePage === 'TASKS'}
+              tabIndex={0}
+              onClick={() => onNavigate('TASKS')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onNavigate('TASKS');
+                }
+              }}
+            >
+              Quản lý task
+            </li>
+          </ul>
         </div>
-        <div className="hero-card-value">{formatCurrency(totalMarketValue)}</div>
-        <div className={`hero-card-profit ${totalProfitLoss >= 0 ? 'profit' : 'loss'}`}>
-          {totalProfitLoss >= 0 ? '+' : ''}
-          {formatCurrency(totalProfitLoss)}
-        </div>
       </div>
+      {showFinancialSummary ? (
+        <div className="hero-card mt-2">
+          <div className="row">
+            <div className="hero-card-label">Tổng tài chính hiện tại</div>
+          </div>
+          <div className="hero-card-value">{formatCurrency(totalMarketValue)}</div>
+          <div className={`hero-card-profit ${totalProfitLoss >= 0 ? 'profit' : 'loss'}`}>
+            {totalProfitLoss >= 0 ? '+' : ''}
+            {formatCurrency(totalProfitLoss)}
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -144,8 +198,8 @@ export function CategorySummarySection({
     <section className="section">
       <div className="section-heading">
         <div>
-          <span className="section-kicker">Dashboard</span>
-          <h2>Tổng hợp theo danh mục đầu tư</h2>
+          <span className="section-kicker">Tổng hợp danh sách tài sản</span>
+          <h2></h2>
         </div>
       </div>
 
@@ -200,8 +254,7 @@ export function PortfolioSection({
       <div className="panel">
         <div className="section-heading">
           <div>
-            <span className="section-kicker">Danh mục đầu tư</span>
-            <h2>Tài sản đang quản lý</h2>
+            <span className="section-kicker">Danh sách tài sản</span>
           </div>
         </div>
 
@@ -257,7 +310,6 @@ export function PortfolioSection({
         <div className="section-heading">
           <div>
             <span className="section-kicker">Giá hiện tại</span>
-            <h2>Auto hoặc manual</h2>
           </div>
         </div>
 
@@ -319,7 +371,6 @@ export function QuickActionsSection({
         <div className="section-heading">
           <div>
             <span className="section-kicker">Thao tác nhanh</span>
-            <h2>Nhập dữ liệu khi cần</h2>
           </div>
         </div>
 
@@ -334,7 +385,7 @@ export function QuickActionsSection({
           </button>
           <button
             type="button"
-            className="primary-button secondary-button"
+            className="primary-button"
             onClick={onOpenPrice}
             disabled={!canCreatePrice}
           >
@@ -342,7 +393,7 @@ export function QuickActionsSection({
           </button>
           <button
             type="button"
-            className="primary-button secondary-button"
+            className="primary-button"
             onClick={onOpenAsset}
             disabled={!canCreateAsset}
           >
@@ -382,14 +433,13 @@ export function RecentTransactionsSection({
       <div className="panel">
         <div className="section-heading">
           <div>
-            <span className="section-kicker">Hoạt động gần đây</span>
-            <h2>Giao dịch mới nhất</h2>
+            <span className="section-kicker">Danh sách giao dịch</span>
           </div>
         </div>
 
         <div className="activity-list mt-2">
           {transactions.map((transaction) => (
-            <div className="activity-row" key={transaction.id}>
+            <div className="activity-row relative" key={transaction.id}>
               <div className="row">
                 <div>
                   <strong>{transaction.asset.name}</strong>
@@ -419,15 +469,16 @@ export function RecentTransactionsSection({
                     {transaction.asset.symbol} • {formatDateTime(transaction.executedAt)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="primary-button mt-2"
-                  onClick={() => onRequestDelete(transaction)}
-                  disabled={submitting}
-                >
-                  Xóa
-                </button>
               </div>
+              
+              <button
+                type="button"
+                className="danger-button icon-button absolute"
+                onClick={() => onRequestDelete(transaction)}
+                disabled={submitting}
+              >
+                🗑
+              </button>
             </div>
           ))}
           {transactions.length === 0 ? <p>Chưa có giao dịch nào.</p> : null}

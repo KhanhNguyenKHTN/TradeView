@@ -135,6 +135,10 @@ button {
   justify-content: space-between;
 }
 
+.column {
+  flex-direction: column;
+}
+
 .w-100 {
   width: 100%;
 }
