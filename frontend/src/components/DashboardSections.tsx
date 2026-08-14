@@ -45,7 +45,7 @@ export function AppHeader({
           </button>
         </div>
         {notificationSection}
-        <h1>Tài chính Gia Đình</h1>
+        <h1>Gia Đình Khánh Thảo</h1>
         <p className="hero-text">
           Quản lý tài chính, đầu tư của gia đình và theo dõi các task cần làm.
         </p>
