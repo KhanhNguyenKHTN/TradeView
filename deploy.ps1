@@ -29,7 +29,7 @@ Copy-Item "frontend/dist" "deploy_temp/frontend" -Recurse -Force
 
 #zip
 echo "Zipping..."
-powershell -Command "Compress-Archive -Path 'deploy_temp\*' -DestinationPath 'deploy_temp.zip' -Force"
+powershell -Command "Compress-Archive -Path 'deploy_temp' -DestinationPath 'deploy_temp.zip' -Force"
 
 #copy to server
 echo "Deploying..."
