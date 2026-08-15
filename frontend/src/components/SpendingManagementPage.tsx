@@ -270,7 +270,7 @@ export default function SpendingManagementPage({
         </article>
       </div>
 
-      <div className="panel spending-comparison-panel">
+      <div className="panel category-card">
         <div className="section-heading">
           <div>
             <span className="section-kicker">So sánh tháng trước</span>
@@ -382,7 +382,7 @@ export default function SpendingManagementPage({
       </div>
 
       <div className="spending-layout">
-        <div className="panel stack">
+        <div className="panel stack category-card vw-80">
           <div className="section-heading">
             <div>
               <span className="section-kicker">Tổng Doanh thu</span>
@@ -455,7 +455,7 @@ export default function SpendingManagementPage({
           </div>
         </div>
 
-        <div className="panel stack">
+        <div className="panel stack category-card vw-80">
           <div className="section-heading">
             <div>
               <span className="section-kicker">Khoản chi định kỳ</span>
@@ -543,7 +543,7 @@ export default function SpendingManagementPage({
           </div>
         </div>
 
-        <div className="panel stack">
+        <div className="panel stack category-card vw-80">
           <div className="section-heading">
             <div>
               <span className="section-kicker">Danh sách chi tiêu</span>
@@ -613,7 +613,7 @@ export default function SpendingManagementPage({
           </div>
         </div>
 
-        <div className="panel stack">
+        <div className="panel stack category-card vw-80">
           <div className="section-heading">
             <div>
               <span className="section-kicker">Tổng hợp chi tiêu tháng</span>

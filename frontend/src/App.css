@@ -830,8 +830,22 @@ tbody tr:last-child td {
   resize: vertical;
 }
 
+.table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrapper table {
+  width: 100%;
+  min-width: 720px;
+}
+
 .task-table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .task-table {
@@ -884,6 +898,12 @@ tbody tr:last-child td {
 .task-table-title span {
   color: var(--text);
   line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .table-wrapper table {
+    min-width: 640px;
+  }
 }
 
 .task-empty-state {
@@ -1500,4 +1520,8 @@ tbody tr:last-child td {
   .spending-action-grid button {
     width: 100%;
   }
+}
+
+.vw-80 {
+  width: calc(100vw - 80px);
 }
