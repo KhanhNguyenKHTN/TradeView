@@ -5,6 +5,7 @@ DEPLOY_DIR="/home/data/TaiChinh"
 ZIP_FILE="$DEPLOY_DIR/deploy_temp.zip"
 DEPLOY_SCRIPT="$DEPLOY_DIR/auto_deploy.sh"
 LOG_FILE="$DEPLOY_DIR/deploy.log"
+SEND_MAIL="$DEPLOY_DIR/noti.py"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') cron_deploy START PID=$$" >> "$LOG_FILE"
 if [ -f "$ZIP_FILE" ]; then
@@ -16,8 +17,12 @@ if [ -f "$ZIP_FILE" ]; then
 
     if [ "$EXIT_CODE" -eq 0 ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') - Deploy completed." >> "$LOG_FILE"
+
+        python3 "$SEND_MAIL" SUCCESS
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') - Deploy failed, exit code: $EXIT_CODE" >> "$LOG_FILE"
+
+        python3 "$SEND_MAIL" FAILED
     fi
 fi
 echo "$(date '+%Y-%m-%d %H:%M:%S') cron_deploy END PID=$$" >> "$LOG_FILE"
