@@ -150,3 +150,9 @@ button {
 .absolute {
   position: absolute;
 }
+
+.color-picker {
+  height: 100%;
+  padding: 0px !important;
+  border: 0 !important;
+}

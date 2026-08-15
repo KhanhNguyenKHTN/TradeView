@@ -38,6 +38,13 @@ enum TaskPriority {
   URGENT
 }
 
+enum ExpenseFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
 model AssetCategory {
   id        Int               @id @default(autoincrement())
   code      AssetCategoryCode @unique
@@ -121,6 +128,85 @@ model PriceSnapshot {
    @@index([dueReminderSentAt, dueDate])
    @@map("tasks")
  }
+
+model MonthlyIncome {
+  id          Int      @id @default(autoincrement())
+  month       String   @unique
+  amount      Decimal  @db.Decimal(20, 2)
+  note        String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([month])
+  @@map("monthly_incomes")
+}
+
+model ExtraIncome {
+  id          Int      @id @default(autoincrement())
+  amount      Decimal  @db.Decimal(20, 2)
+  title       String
+  note        String?  @db.Text
+  receivedAt  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([receivedAt])
+  @@map("extra_incomes")
+}
+
+model ExpenseCategory {
+  id               Int                @id @default(autoincrement())
+  name             String             @unique
+  color            String?
+  isEnabled        Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  recurringExpenses RecurringExpense[]
+  expenseEntries   ExpenseEntry[]
+
+  @@map("expense_categories")
+}
+
+model RecurringExpense {
+  id                Int               @id @default(autoincrement())
+  categoryId        Int
+  title             String
+  amount            Decimal           @db.Decimal(20, 2)
+  frequency         ExpenseFrequency
+  dayOfWeek         Int?
+  dayOfMonth        Int?
+  monthOfYear       Int?
+  startDate         DateTime
+  endDate           DateTime?
+  note              String?           @db.Text
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  category          ExpenseCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  expenseEntries    ExpenseEntry[]
+
+  @@index([categoryId, frequency, isActive])
+  @@index([startDate, endDate])
+  @@map("recurring_expenses")
+}
+
+model ExpenseEntry {
+  id                 Int               @id @default(autoincrement())
+  categoryId         Int
+  recurringExpenseId Int?
+  amount             Decimal           @db.Decimal(20, 2)
+  title              String
+  note               String?           @db.Text
+  spentAt            DateTime
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  category           ExpenseCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  recurringExpense   RecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
+
+  @@index([spentAt, categoryId])
+  @@index([recurringExpenseId, spentAt])
+  @@map("expense_entries")
+}
 
  model PushSubscription {
    id             Int       @id @default(autoincrement())

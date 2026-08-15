@@ -70,6 +70,23 @@ export function AppHeader({
             </li>
             <li
               className={`header-nav-tab-item ${
+                activePage === 'SPENDING' ? 'header-nav-tab-item-active' : ''
+              }`}
+              role="tab"
+              aria-selected={activePage === 'SPENDING'}
+              tabIndex={0}
+              onClick={() => onNavigate('SPENDING')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onNavigate('SPENDING');
+                }
+              }}
+            >
+              Chi tiêu
+            </li>
+            <li
+              className={`header-nav-tab-item ${
                 activePage === 'TASKS' ? 'header-nav-tab-item-active' : ''
               }`}
               role="tab"

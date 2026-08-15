@@ -105,7 +105,143 @@ export type AssetOption = {
   label: string;
 };
 
-export type AppPage = 'DASHBOARD' | 'TASKS';
+export type ExpenseFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export type MonthlyIncome = {
+  id?: number;
+  month: string;
+  amount: number;
+  note: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ExtraIncomeItem = {
+  id: number;
+  amount: number;
+  title: string;
+  note: string;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExpenseCategory = {
+  id: number;
+  name: string;
+  color: string | null;
+  isEnabled: boolean;
+};
+
+export type RecurringExpense = {
+  id: number;
+  categoryId: number;
+  title: string;
+  amount: number;
+  frequency: ExpenseFrequency;
+  dayOfWeek: number | null;
+  dayOfMonth: number | null;
+  monthOfYear: number | null;
+  startDate: string;
+  endDate: string | null;
+  note: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  category: ExpenseCategory | null;
+};
+
+export type ExpenseEntry = {
+  id: number;
+  categoryId: number;
+  recurringExpenseId: number | null;
+  amount: number;
+  title: string;
+  note: string;
+  spentAt: string;
+  createdAt: string;
+  updatedAt: string;
+  category: ExpenseCategory | null;
+  recurringExpense: {
+    id: number;
+    title: string;
+    amount: number;
+    frequency: ExpenseFrequency;
+  } | null;
+};
+
+export type SpendingSummary = {
+  month: string;
+  income: {
+    fixed: number;
+    extra: number;
+    total: number;
+    monthlyIncome: MonthlyIncome;
+    extraItems: ExtraIncomeItem[];
+  };
+  expenses: {
+    actualTotal: number;
+    reservedForFuture: number;
+    actualItems: ExpenseEntry[];
+    recurringItems: RecurringExpense[];
+    byCategory: {
+      categoryId: number;
+      categoryName: string;
+      totalSpent: number;
+    }[];
+  };
+  remainingBalance: number;
+  comparisonWithPreviousMonth: {
+    month: string;
+    incomeDelta: number;
+    spendingDelta: number;
+    reservedDelta: number;
+    remainingDelta: number;
+  };
+};
+
+export type MonthlyIncomeFormState = {
+  month: string;
+  amount: string;
+  note: string;
+};
+
+export type ExtraIncomeFormState = {
+  amount: string;
+  title: string;
+  note: string;
+  receivedAt: string;
+};
+
+export type ExpenseCategoryFormState = {
+  name: string;
+  color: string;
+};
+
+export type RecurringExpenseFormState = {
+  categoryId: string;
+  title: string;
+  amount: string;
+  frequency: ExpenseFrequency;
+  dayOfWeek: string;
+  dayOfMonth: string;
+  monthOfYear: string;
+  startDate: string;
+  endDate: string;
+  note: string;
+  isActive: boolean;
+};
+
+export type ExpenseEntryFormState = {
+  categoryId: string;
+  recurringExpenseId: string;
+  amount: string;
+  title: string;
+  note: string;
+  spentAt: string;
+};
+
+export type AppPage = 'DASHBOARD' | 'TASKS' | 'SPENDING';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED';
 

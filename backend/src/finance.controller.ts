@@ -8,12 +8,15 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
+  Query,
 } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import * as webpush from 'web-push';
 import {
   AssetCategoryCode,
+  ExpenseFrequency,
   PriceSource,
   Prisma,
   TaskPriority,
@@ -81,6 +84,51 @@ type SendPushNotificationDto = {
   body: string;
   url?: string;
 };
+
+type UpsertMonthlyIncomeDto = {
+  month: string;
+  amount: number;
+  note?: string;
+};
+
+type CreateExtraIncomeDto = {
+  amount: number;
+  title: string;
+  note?: string;
+  receivedAt: string;
+};
+
+type CreateExpenseCategoryDto = {
+  name: string;
+  color?: string;
+};
+
+type CreateRecurringExpenseDto = {
+  categoryId: number;
+  title: string;
+  amount: number;
+  frequency: ExpenseFrequency;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  monthOfYear?: number;
+  startDate: string;
+  endDate?: string;
+  note?: string;
+  isActive?: boolean;
+};
+
+type UpdateRecurringExpenseDto = Partial<CreateRecurringExpenseDto>;
+
+type CreateExpenseEntryDto = {
+  categoryId: number;
+  recurringExpenseId?: number;
+  amount: number;
+  title: string;
+  note?: string;
+  spentAt: string;
+};
+
+type UpdateExpenseEntryDto = Partial<CreateExpenseEntryDto>;
 
 @Controller('api')
 export class FinanceController {
@@ -409,7 +457,7 @@ export class FinanceController {
         existingTask.status === TaskStatus.DONE &&
         body.status !== TaskStatus.DONE
       ) {
-        data.dueReminderSentAt = null;
+        (data as Record<string, unknown>).dueReminderSentAt = null;
       }
     }
 
@@ -419,7 +467,7 @@ export class FinanceController {
 
     if (body.dueDate !== undefined) {
       data.dueDate = new Date(body.dueDate);
-      data.dueReminderSentAt = null;
+      (data as Record<string, unknown>).dueReminderSentAt = null;
     }
 
     if (body.owner !== undefined) {
@@ -483,6 +531,428 @@ export class FinanceController {
     return this.prisma.task.delete({
       where: { id },
     });
+  }
+
+  @Get('income-monthly')
+  async getMonthlyIncome(@Query('month') month?: string) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+
+    const income = await this.prisma.monthlyIncome.findUnique({
+      where: { month: normalizedMonth },
+    });
+
+    return income
+      ? this.serializeMonthlyIncome(income)
+      : {
+          month: normalizedMonth,
+          amount: 0,
+          note: '',
+          createdAt: null,
+          updatedAt: null,
+        };
+  }
+
+  @Put('income-monthly/:month')
+  async upsertMonthlyIncome(
+    @Param('month') month: string,
+    @Body() body: Omit<UpsertMonthlyIncomeDto, 'month'>,
+  ) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+
+    return this.serializeMonthlyIncome(
+      await this.prisma.monthlyIncome.upsert({
+        where: { month: normalizedMonth },
+        update: {
+          amount: new Prisma.Decimal(this.normalizeMoney(body.amount)),
+          note: body.note?.trim() || null,
+        },
+        create: {
+          month: normalizedMonth,
+          amount: new Prisma.Decimal(this.normalizeMoney(body.amount)),
+          note: body.note?.trim() || null,
+        },
+      }),
+    );
+  }
+
+  @Get('extra-incomes')
+  async getExtraIncomes(@Query('month') month?: string) {
+    const { start, end } = this.getMonthRange(month);
+
+    const items = await this.prisma.extraIncome.findMany({
+      where: {
+        receivedAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return items.map((item) => this.serializeExtraIncome(item));
+  }
+
+  @Post('extra-incomes')
+  async createExtraIncome(@Body() body: CreateExtraIncomeDto) {
+    return this.serializeExtraIncome(
+      await this.prisma.extraIncome.create({
+        data: {
+          amount: new Prisma.Decimal(this.normalizeMoney(body.amount)),
+          title: body.title.trim(),
+          note: body.note?.trim() || null,
+          receivedAt: new Date(body.receivedAt),
+        },
+      }),
+    );
+  }
+
+  @Delete('extra-incomes/:id')
+  async deleteExtraIncome(@Param('id', ParseIntPipe) id: number) {
+    return this.prisma.extraIncome.delete({
+      where: { id },
+    });
+  }
+
+  @Get('expense-categories')
+  async getExpenseCategories() {
+    return this.prisma.expenseCategory.findMany({
+      where: { isEnabled: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  @Post('expense-categories')
+  async createExpenseCategory(@Body() body: CreateExpenseCategoryDto) {
+    return this.prisma.expenseCategory.create({
+      data: {
+        name: body.name.trim(),
+        color: body.color?.trim() || null,
+      },
+    });
+  }
+
+  @Get('recurring-expenses')
+  async getRecurringExpenses() {
+    const items = await this.prisma.recurringExpense.findMany({
+      include: {
+        category: true,
+      },
+      orderBy: [{ isActive: 'desc' }, { frequency: 'asc' }, { title: 'asc' }],
+    });
+
+    return items.map((item) => this.serializeRecurringExpense(item));
+  }
+
+  @Post('recurring-expenses')
+  async createRecurringExpense(@Body() body: CreateRecurringExpenseDto) {
+    this.validateRecurringExpense(body);
+
+    return this.serializeRecurringExpense(
+      await this.prisma.recurringExpense.create({
+        data: {
+          categoryId: body.categoryId,
+          title: body.title.trim(),
+          amount: new Prisma.Decimal(this.normalizeMoney(body.amount)),
+          frequency: body.frequency,
+          dayOfWeek: body.dayOfWeek ?? null,
+          dayOfMonth: body.dayOfMonth ?? null,
+          monthOfYear: body.monthOfYear ?? null,
+          startDate: new Date(body.startDate),
+          endDate: body.endDate ? new Date(body.endDate) : null,
+          note: body.note?.trim() || null,
+          isActive: body.isActive ?? true,
+        },
+        include: {
+          category: true,
+        },
+      }),
+    );
+  }
+
+  @Patch('recurring-expenses/:id')
+  async updateRecurringExpense(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateRecurringExpenseDto,
+  ) {
+    const existing = await this.prisma.recurringExpense.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new Error(`Recurring expense ${id} not found`);
+    }
+
+    const nextPayload: CreateRecurringExpenseDto = {
+      categoryId: body.categoryId ?? existing.categoryId,
+      title: body.title ?? existing.title,
+      amount:
+        body.amount ??
+        Number((existing as { amount: Prisma.Decimal }).amount),
+      frequency: body.frequency ?? existing.frequency,
+      dayOfWeek: body.dayOfWeek ?? existing.dayOfWeek ?? undefined,
+      dayOfMonth: body.dayOfMonth ?? existing.dayOfMonth ?? undefined,
+      monthOfYear: body.monthOfYear ?? existing.monthOfYear ?? undefined,
+      startDate: (body.startDate ? new Date(body.startDate) : existing.startDate).toISOString(),
+      endDate:
+        body.endDate !== undefined
+          ? body.endDate
+          : existing.endDate?.toISOString(),
+      note: body.note ?? existing.note ?? undefined,
+      isActive: body.isActive ?? existing.isActive,
+    };
+
+    this.validateRecurringExpense(nextPayload);
+
+    return this.serializeRecurringExpense(
+      await this.prisma.recurringExpense.update({
+        where: { id },
+        data: {
+          categoryId: body.categoryId,
+          title: body.title?.trim(),
+          amount:
+            body.amount !== undefined
+              ? new Prisma.Decimal(this.normalizeMoney(body.amount))
+              : undefined,
+          frequency: body.frequency,
+          dayOfWeek: body.dayOfWeek !== undefined ? body.dayOfWeek : undefined,
+          dayOfMonth:
+            body.dayOfMonth !== undefined ? body.dayOfMonth : undefined,
+          monthOfYear:
+            body.monthOfYear !== undefined ? body.monthOfYear : undefined,
+          startDate: body.startDate ? new Date(body.startDate) : undefined,
+          endDate:
+            body.endDate !== undefined
+              ? body.endDate
+                ? new Date(body.endDate)
+                : null
+              : undefined,
+          note: body.note !== undefined ? body.note.trim() || null : undefined,
+          isActive: body.isActive,
+        },
+        include: {
+          category: true,
+        },
+      }),
+    );
+  }
+
+  @Delete('recurring-expenses/:id')
+  async deleteRecurringExpense(@Param('id', ParseIntPipe) id: number) {
+    return this.prisma.recurringExpense.delete({
+      where: { id },
+    });
+  }
+
+  @Get('expense-entries')
+  async getExpenseEntries(@Query('month') month?: string) {
+    const { start, end } = this.getMonthRange(month);
+
+    const items = await this.prisma.expenseEntry.findMany({
+      where: {
+        spentAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      include: {
+        category: true,
+        recurringExpense: true,
+      },
+      orderBy: [{ spentAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return items.map((item) => this.serializeExpenseEntry(item));
+  }
+
+  @Post('expense-entries')
+  async createExpenseEntry(@Body() body: CreateExpenseEntryDto) {
+    return this.serializeExpenseEntry(
+      await this.prisma.expenseEntry.create({
+        data: {
+          categoryId: body.categoryId,
+          recurringExpenseId: body.recurringExpenseId ?? null,
+          amount: new Prisma.Decimal(this.normalizeMoney(body.amount)),
+          title: body.title.trim(),
+          note: body.note?.trim() || null,
+          spentAt: new Date(body.spentAt),
+        },
+        include: {
+          category: true,
+          recurringExpense: true,
+        },
+      }),
+    );
+  }
+
+  @Patch('expense-entries/:id')
+  async updateExpenseEntry(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateExpenseEntryDto,
+  ) {
+    return this.serializeExpenseEntry(
+      await this.prisma.expenseEntry.update({
+        where: { id },
+        data: {
+          categoryId: body.categoryId,
+          recurringExpenseId:
+            body.recurringExpenseId !== undefined
+              ? body.recurringExpenseId || null
+              : undefined,
+          amount:
+            body.amount !== undefined
+              ? new Prisma.Decimal(this.normalizeMoney(body.amount))
+              : undefined,
+          title: body.title?.trim(),
+          note: body.note !== undefined ? body.note.trim() || null : undefined,
+          spentAt: body.spentAt ? new Date(body.spentAt) : undefined,
+        },
+        include: {
+          category: true,
+          recurringExpense: true,
+        },
+      }),
+    );
+  }
+
+  @Delete('expense-entries/:id')
+  async deleteExpenseEntry(@Param('id', ParseIntPipe) id: number) {
+    return this.prisma.expenseEntry.delete({
+      where: { id },
+    });
+  }
+
+  @Get('spending-summary')
+  async getSpendingSummary(@Query('month') month?: string) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    const { start, end } = this.getMonthRange(normalizedMonth);
+    const previousMonth = this.shiftMonth(normalizedMonth, -1);
+
+    const [monthlyIncome, extraIncomes, expenseEntries, recurringExpenses] =
+      await Promise.all([
+        this.prisma.monthlyIncome.findUnique({
+          where: { month: normalizedMonth },
+        }),
+        this.prisma.extraIncome.findMany({
+          where: {
+            receivedAt: {
+              gte: start,
+              lt: end,
+            },
+          },
+        }),
+        this.prisma.expenseEntry.findMany({
+          where: {
+            spentAt: {
+              gte: start,
+              lt: end,
+            },
+          },
+          include: {
+            category: true,
+            recurringExpense: true,
+          },
+        }),
+        this.prisma.recurringExpense.findMany({
+          where: {
+            isActive: true,
+          },
+          include: {
+            category: true,
+          },
+        }),
+      ]);
+
+    const expectedRecurring = recurringExpenses.filter((item) =>
+      this.isRecurringExpenseDueInMonth(item, normalizedMonth),
+    );
+
+    const reservedForFuture = expectedRecurring.reduce((sum, recurring) => {
+      const matchedEntry = expenseEntries.find(
+        (entry) =>
+          entry.recurringExpenseId === recurring.id &&
+          this.isDateInMonth(entry.spentAt, normalizedMonth),
+      );
+
+      return sum + (matchedEntry ? 0 : Number(recurring.amount));
+    }, 0);
+
+    const totalFixedIncome = Number(monthlyIncome?.amount ?? 0);
+    const totalExtraIncome = extraIncomes.reduce(
+      (sum, item) => sum + Number(item.amount),
+      0,
+    );
+    const totalSpent = expenseEntries.reduce(
+      (sum, item) => sum + Number(item.amount),
+      0,
+    );
+    const remainingBalance =
+      totalFixedIncome + totalExtraIncome - totalSpent - reservedForFuture;
+
+    const previousSummary = await this.buildSpendingSummary(previousMonth);
+
+    const spendingByCategoryMap = new Map<string, { categoryId: number; categoryName: string; totalSpent: number }>();
+
+    expenseEntries.forEach((entry) => {
+      const key = String(entry.categoryId);
+      const current = spendingByCategoryMap.get(key);
+
+      if (current) {
+        current.totalSpent += Number(entry.amount);
+      } else {
+        spendingByCategoryMap.set(key, {
+          categoryId: entry.categoryId,
+          categoryName: entry.category.name,
+          totalSpent: Number(entry.amount),
+        });
+      }
+    });
+
+    return {
+      month: normalizedMonth,
+      income: {
+        fixed: this.round(totalFixedIncome),
+        extra: this.round(totalExtraIncome),
+        total: this.round(totalFixedIncome + totalExtraIncome),
+        monthlyIncome: monthlyIncome
+          ? this.serializeMonthlyIncome(monthlyIncome)
+          : {
+              month: normalizedMonth,
+              amount: 0,
+              note: '',
+              createdAt: null,
+              updatedAt: null,
+            },
+        extraItems: extraIncomes.map((item) => this.serializeExtraIncome(item)),
+      },
+      expenses: {
+        actualTotal: this.round(totalSpent),
+        reservedForFuture: this.round(reservedForFuture),
+        actualItems: expenseEntries.map((item) => this.serializeExpenseEntry(item)),
+        recurringItems: expectedRecurring.map((item) =>
+          this.serializeRecurringExpense(item),
+        ),
+        byCategory: Array.from(spendingByCategoryMap.values())
+          .map((item) => ({
+            ...item,
+            totalSpent: this.round(item.totalSpent),
+          }))
+          .sort((a, b) => b.totalSpent - a.totalSpent),
+      },
+      remainingBalance: this.round(remainingBalance),
+      comparisonWithPreviousMonth: {
+        month: previousMonth,
+        incomeDelta: this.round(
+          totalFixedIncome + totalExtraIncome - previousSummary.incomeTotal,
+        ),
+        spendingDelta: this.round(totalSpent - previousSummary.actualSpent),
+        reservedDelta: this.round(
+          reservedForFuture - previousSummary.reservedForFuture,
+        ),
+        remainingDelta: this.round(
+          remainingBalance - previousSummary.remainingBalance,
+        ),
+      },
+    };
   }
 
   @Post('push-subscriptions')
@@ -998,6 +1468,329 @@ export class FinanceController {
       latestPrice: this.round(currentRate),
       marketValue: this.round(marketValue),
       profitLoss: this.round(profitLoss),
+    };
+  }
+
+  private serializeMonthlyIncome(item: {
+    id: number;
+    month: string;
+    amount: Prisma.Decimal;
+    note: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: item.id,
+      month: item.month,
+      amount: Number(item.amount),
+      note: item.note ?? '',
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+    };
+  }
+
+  private serializeExtraIncome(item: {
+    id: number;
+    amount: Prisma.Decimal;
+    title: string;
+    note: string | null;
+    receivedAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: item.id,
+      amount: Number(item.amount),
+      title: item.title,
+      note: item.note ?? '',
+      receivedAt: item.receivedAt.toISOString(),
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+    };
+  }
+
+  private serializeRecurringExpense(
+    item: {
+      id: number;
+      categoryId: number;
+      title: string;
+      amount: Prisma.Decimal;
+      frequency: ExpenseFrequency;
+      dayOfWeek: number | null;
+      dayOfMonth: number | null;
+      monthOfYear: number | null;
+      startDate: Date;
+      endDate: Date | null;
+      note: string | null;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+      category?: {
+        id: number;
+        name: string;
+        color: string | null;
+        isEnabled: boolean;
+      };
+    },
+  ) {
+    return {
+      id: item.id,
+      categoryId: item.categoryId,
+      title: item.title,
+      amount: Number(item.amount),
+      frequency: item.frequency,
+      dayOfWeek: item.dayOfWeek,
+      dayOfMonth: item.dayOfMonth,
+      monthOfYear: item.monthOfYear,
+      startDate: item.startDate.toISOString(),
+      endDate: item.endDate?.toISOString() ?? null,
+      note: item.note ?? '',
+      isActive: item.isActive,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+      category: item.category ?? null,
+    };
+  }
+
+  private serializeExpenseEntry(
+    item: {
+      id: number;
+      categoryId: number;
+      recurringExpenseId: number | null;
+      amount: Prisma.Decimal;
+      title: string;
+      note: string | null;
+      spentAt: Date;
+      createdAt: Date;
+      updatedAt: Date;
+      category?: {
+        id: number;
+        name: string;
+        color: string | null;
+        isEnabled: boolean;
+      };
+      recurringExpense?: {
+        id: number;
+        title: string;
+        amount: Prisma.Decimal;
+        frequency: ExpenseFrequency;
+      } | null;
+    },
+  ) {
+    return {
+      id: item.id,
+      categoryId: item.categoryId,
+      recurringExpenseId: item.recurringExpenseId,
+      amount: Number(item.amount),
+      title: item.title,
+      note: item.note ?? '',
+      spentAt: item.spentAt.toISOString(),
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+      category: item.category ?? null,
+      recurringExpense: item.recurringExpense
+        ? {
+            id: item.recurringExpense.id,
+            title: item.recurringExpense.title,
+            amount: Number(item.recurringExpense.amount),
+            frequency: item.recurringExpense.frequency,
+          }
+        : null,
+    };
+  }
+
+  private normalizeMoney(value: number) {
+    if (!Number.isFinite(value) || Number.isNaN(value)) {
+      throw new BadRequestException('Số tiền không hợp lệ.');
+    }
+
+    return Math.max(0, Math.round(value * 100) / 100);
+  }
+
+  private normalizeMonthKey(value?: string) {
+    const rawValue = value?.trim();
+
+    if (!rawValue) {
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      return `${year}-${month}`;
+    }
+
+    if (!/^\d{4}-\d{2}$/.test(rawValue)) {
+      throw new BadRequestException('Tháng phải có định dạng YYYY-MM.');
+    }
+
+    const [, monthText] = rawValue.split('-');
+    const month = Number(monthText);
+
+    if (month < 1 || month > 12) {
+      throw new BadRequestException('Tháng không hợp lệ.');
+    }
+
+    return rawValue;
+  }
+
+  private getMonthRange(month?: string) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    const [yearText, monthText] = normalizedMonth.split('-');
+    const year = Number(yearText);
+    const monthNumber = Number(monthText) - 1;
+    const start = new Date(year, monthNumber, 1);
+    const end = new Date(year, monthNumber + 1, 1);
+
+    return { start, end };
+  }
+
+  private shiftMonth(month: string, delta: number) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    const [yearText, monthText] = normalizedMonth.split('-');
+    const shiftedDate = new Date(Number(yearText), Number(monthText) - 1 + delta, 1);
+
+    return `${shiftedDate.getFullYear()}-${String(shiftedDate.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private isDateInMonth(date: Date, month: string) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    return date.toISOString().slice(0, 7) === normalizedMonth;
+  }
+
+  private validateRecurringExpense(body: CreateRecurringExpenseDto) {
+    if (!body.title?.trim()) {
+      throw new BadRequestException('Tên khoản chi định kỳ là bắt buộc.');
+    }
+
+    this.normalizeMoney(body.amount);
+
+    if (body.frequency === ExpenseFrequency.WEEKLY) {
+      if (body.dayOfWeek === undefined || body.dayOfWeek < 0 || body.dayOfWeek > 6) {
+        throw new BadRequestException('Khoản chi hàng tuần cần dayOfWeek từ 0 đến 6.');
+      }
+    }
+
+    if (body.frequency === ExpenseFrequency.MONTHLY) {
+      if (
+        body.dayOfMonth === undefined ||
+        body.dayOfMonth < 1 ||
+        body.dayOfMonth > 31
+      ) {
+        throw new BadRequestException('Khoản chi hàng tháng cần dayOfMonth từ 1 đến 31.');
+      }
+    }
+
+    if (body.frequency === ExpenseFrequency.YEARLY) {
+      if (
+        body.dayOfMonth === undefined ||
+        body.dayOfMonth < 1 ||
+        body.dayOfMonth > 31 ||
+        body.monthOfYear === undefined ||
+        body.monthOfYear < 1 ||
+        body.monthOfYear > 12
+      ) {
+        throw new BadRequestException(
+          'Khoản chi hàng năm cần monthOfYear từ 1 đến 12 và dayOfMonth từ 1 đến 31.',
+        );
+      }
+    }
+  }
+
+  private isRecurringExpenseDueInMonth(
+    item: {
+      frequency: ExpenseFrequency;
+      dayOfWeek: number | null;
+      dayOfMonth: number | null;
+      monthOfYear: number | null;
+      startDate: Date;
+      endDate: Date | null;
+    },
+    month: string,
+  ) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    const { start, end } = this.getMonthRange(normalizedMonth);
+
+    if (item.startDate >= end) {
+      return false;
+    }
+
+    if (item.endDate && item.endDate < start) {
+      return false;
+    }
+
+    if (item.frequency === ExpenseFrequency.DAILY) {
+      return true;
+    }
+
+    if (item.frequency === ExpenseFrequency.WEEKLY) {
+      return item.dayOfWeek !== null;
+    }
+
+    if (item.frequency === ExpenseFrequency.MONTHLY) {
+      return item.dayOfMonth !== null;
+    }
+
+    if (item.frequency === ExpenseFrequency.YEARLY) {
+      return item.monthOfYear === start.getMonth() + 1 && item.dayOfMonth !== null;
+    }
+
+    return false;
+  }
+
+  private async buildSpendingSummary(month: string) {
+    const normalizedMonth = this.normalizeMonthKey(month);
+    const { start, end } = this.getMonthRange(normalizedMonth);
+
+    const [monthlyIncome, extraIncomes, expenseEntries, recurringExpenses] =
+      await Promise.all([
+        this.prisma.monthlyIncome.findUnique({
+          where: { month: normalizedMonth },
+        }),
+        this.prisma.extraIncome.findMany({
+          where: {
+            receivedAt: {
+              gte: start,
+              lt: end,
+            },
+          },
+        }),
+        this.prisma.expenseEntry.findMany({
+          where: {
+            spentAt: {
+              gte: start,
+              lt: end,
+            },
+          },
+        }),
+        this.prisma.recurringExpense.findMany({
+          where: {
+            isActive: true,
+          },
+        }),
+      ]);
+
+    const reservedForFuture = recurringExpenses
+      .filter((item) => this.isRecurringExpenseDueInMonth(item, normalizedMonth))
+      .reduce((sum, recurring) => {
+        const matchedEntry = expenseEntries.find(
+          (entry) => entry.recurringExpenseId === recurring.id,
+        );
+
+        return sum + (matchedEntry ? 0 : Number(recurring.amount));
+      }, 0);
+
+    const incomeTotal =
+      Number(monthlyIncome?.amount ?? 0) +
+      extraIncomes.reduce((sum, item) => sum + Number(item.amount), 0);
+    const actualSpent = expenseEntries.reduce(
+      (sum, item) => sum + Number(item.amount),
+      0,
+    );
+    const remainingBalance = incomeTotal - actualSpent - reservedForFuture;
+
+    return {
+      incomeTotal: this.round(incomeTotal),
+      actualSpent: this.round(actualSpent),
+      reservedForFuture: this.round(reservedForFuture),
+      remainingBalance: this.round(remainingBalance),
     };
   }
 

@@ -14,6 +14,7 @@ import {
   ToastStack,
 } from './components/DashboardSections';
 import PushNotificationSection from './components/PushNotificationSection';
+import SpendingManagementPage from './components/SpendingManagementPage';
 import TaskManagementPage from './components/TaskManagementPage';
 import type {
   AppPage,
@@ -21,9 +22,19 @@ import type {
   AssetOption,
   Category,
   DashboardResponse,
+  ExpenseCategory,
+  ExpenseCategoryFormState,
+  ExpenseEntry,
+  ExpenseEntryFormState,
+  ExtraIncomeFormState,
   LatestPrice,
   LatestTransaction,
+  MonthlyIncome,
+  MonthlyIncomeFormState,
   PriceFormState,
+  RecurringExpense,
+  RecurringExpenseFormState,
+  SpendingSummary,
   TaskEditableField,
   TaskFormValues,
   TaskItem,
@@ -221,6 +232,42 @@ const emptyTaskSummary: TaskSummary = {
   averageFinancialProgress: 0,
 };
 
+const currentMonthValue = new Date().toISOString().slice(0, 7);
+
+const emptyMonthlyIncome: MonthlyIncome = {
+  month: currentMonthValue,
+  amount: 0,
+  note: '',
+  createdAt: null,
+  updatedAt: null,
+};
+
+const emptySpendingSummary: SpendingSummary = {
+  month: currentMonthValue,
+  income: {
+    fixed: 0,
+    extra: 0,
+    total: 0,
+    monthlyIncome: emptyMonthlyIncome,
+    extraItems: [],
+  },
+  expenses: {
+    actualTotal: 0,
+    reservedForFuture: 0,
+    actualItems: [],
+    recurringItems: [],
+    byCategory: [],
+  },
+  remainingBalance: 0,
+  comparisonWithPreviousMonth: {
+    month: '',
+    incomeDelta: 0,
+    spendingDelta: 0,
+    reservedDelta: 0,
+    remainingDelta: 0,
+  },
+};
+
 function getCookie(name: string) {
   if (typeof document === 'undefined') {
     return '';
@@ -271,6 +318,11 @@ function App() {
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('CARD');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [taskSummary, setTaskSummary] = useState<TaskSummary>(emptyTaskSummary);
+  const [spendingMonth, setSpendingMonth] = useState(currentMonthValue);
+  const [spendingSummary, setSpendingSummary] = useState<SpendingSummary>(emptySpendingSummary);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [expenseEntries, setExpenseEntries] = useState<ExpenseEntry[]>([]);
   const [autoGoldRefreshTriggered, setAutoGoldRefreshTriggered] = useState(false);
   const [pushPermission, setPushPermission] = useState<PushPermissionState>(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -315,6 +367,47 @@ function App() {
     capturedAt: toDateTimeLocalValue(),
   });
 
+  const [monthlyIncomeForm, setMonthlyIncomeForm] = useState<MonthlyIncomeFormState>({
+    month: currentMonthValue,
+    amount: '',
+    note: '',
+  });
+
+  const [extraIncomeForm, setExtraIncomeForm] = useState<ExtraIncomeFormState>({
+    amount: '',
+    title: '',
+    note: '',
+    receivedAt: toDateInputValue(),
+  });
+
+  const [expenseCategoryForm, setExpenseCategoryForm] = useState<ExpenseCategoryFormState>({
+    name: '',
+    color: '#2563eb',
+  });
+
+  const [recurringExpenseForm, setRecurringExpenseForm] = useState<RecurringExpenseFormState>({
+    categoryId: '',
+    title: '',
+    amount: '',
+    frequency: 'MONTHLY',
+    dayOfWeek: '',
+    dayOfMonth: '',
+    monthOfYear: '',
+    startDate: toDateInputValue(),
+    endDate: '',
+    note: '',
+    isActive: true,
+  });
+
+  const [expenseEntryForm, setExpenseEntryForm] = useState<ExpenseEntryFormState>({
+    categoryId: '',
+    recurringExpenseId: '',
+    amount: '',
+    title: '',
+    note: '',
+    spentAt: toDateInputValue(),
+  });
+
   const showToast = (type: 'success' | 'error', message: string) => {
     if (toastTimeoutRef.current) {
       window.clearTimeout(toastTimeoutRef.current);
@@ -355,7 +448,7 @@ function App() {
     setPushDebugLog((current) => [...current.slice(-29), entry]);
   };
 
-  const loadData = async () => {
+  const loadData = async (month = spendingMonth) => {
     setLoading(true);
     setErrorMessage('');
 
@@ -367,6 +460,12 @@ function App() {
         pricesRes,
         tasksRes,
         taskSummaryRes,
+        monthlyIncomeRes,
+        extraIncomesRes,
+        expenseCategoriesRes,
+        recurringExpensesRes,
+        expenseEntriesRes,
+        spendingSummaryRes,
       ] = await Promise.all([
         api.get<DashboardResponse>('/dashboard'),
         api.get<Category[]>('/categories'),
@@ -374,6 +473,12 @@ function App() {
         api.get<LatestPrice[]>('/prices/latest'),
         api.get<TaskItem[]>('/tasks'),
         api.get<TaskSummary>('/tasks/summary'),
+        api.get<MonthlyIncome>('/income-monthly', { params: { month } }),
+        api.get('/extra-incomes', { params: { month } }),
+        api.get<ExpenseCategory[]>('/expense-categories'),
+        api.get<RecurringExpense[]>('/recurring-expenses'),
+        api.get<ExpenseEntry[]>('/expense-entries', { params: { month } }),
+        api.get<SpendingSummary>('/spending-summary', { params: { month } }),
       ]);
 
       const loadedDashboard = dashboardRes.data;
@@ -382,6 +487,11 @@ function App() {
       const loadedPrices = pricesRes.data;
       const loadedTasks = tasksRes.data;
       const loadedTaskSummary = taskSummaryRes.data;
+      const loadedMonthlyIncome = monthlyIncomeRes.data;
+      const loadedExpenseCategories = expenseCategoriesRes.data;
+      const loadedRecurringExpenses = recurringExpensesRes.data;
+      const loadedExpenseEntries = expenseEntriesRes.data;
+      const loadedSpendingSummary = spendingSummaryRes.data;
 
       setDashboard(loadedDashboard);
       setCategories(loadedCategories);
@@ -389,6 +499,17 @@ function App() {
       setLatestPrices(loadedPrices);
       setTasks(loadedTasks);
       setTaskSummary(loadedTaskSummary);
+      setExpenseCategories(loadedExpenseCategories);
+      setRecurringExpenses(loadedRecurringExpenses);
+      setExpenseEntries(loadedExpenseEntries);
+      setSpendingSummary({
+        ...loadedSpendingSummary,
+        income: {
+          ...loadedSpendingSummary.income,
+          monthlyIncome: loadedMonthlyIncome,
+          extraItems: loadedSpendingSummary.income.extraItems ?? extraIncomesRes.data,
+        },
+      });
 
       setAssetForm((current) => ({
         ...current,
@@ -421,6 +542,28 @@ function App() {
             ?.id.toString() ??
           '',
       }));
+
+      setMonthlyIncomeForm({
+        month,
+        amount: loadedMonthlyIncome?.amount ? String(loadedMonthlyIncome.amount) : '',
+        note: loadedMonthlyIncome?.note ?? '',
+      });
+
+      setRecurringExpenseForm((current) => ({
+        ...current,
+        categoryId:
+          loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
+          loadedExpenseCategories[0]?.id.toString() ??
+          '',
+      }));
+
+      setExpenseEntryForm((current) => ({
+        ...current,
+        categoryId:
+          loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
+          loadedExpenseCategories[0]?.id.toString() ??
+          '',
+      }));
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(
@@ -444,8 +587,8 @@ function App() {
     }
 
     setAutoGoldRefreshTriggered(false);
-    void loadData();
-  }, [isAuthenticated]);
+    void loadData(spendingMonth);
+  }, [isAuthenticated, spendingMonth]);
 
   useEffect(() => {
     return () => {
@@ -716,6 +859,10 @@ function App() {
       setLatestPrices([]);
       setTasks([]);
       setTaskSummary(emptyTaskSummary);
+      setSpendingSummary(emptySpendingSummary);
+      setExpenseCategories([]);
+      setRecurringExpenses([]);
+      setExpenseEntries([]);
     setAutoGoldRefreshTriggered(false);
     setLoading(false);
   };
@@ -1006,6 +1153,319 @@ function App() {
     }
   };
 
+  const handleSubmitMonthlyIncome = async () => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.put(`/income-monthly/${monthlyIncomeForm.month}`, {
+        amount: Number(monthlyIncomeForm.amount || 0),
+        note: monthlyIncomeForm.note.trim() || undefined,
+      });
+      showToast('success', 'Đã lưu doanh thu tháng thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể lưu doanh thu tháng.',
+        );
+      } else {
+        showToast('error', 'Không thể lưu doanh thu tháng.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitExtraIncome = async () => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.post('/extra-incomes', {
+        amount: Number(extraIncomeForm.amount || 0),
+        title: extraIncomeForm.title.trim(),
+        note: extraIncomeForm.note.trim() || undefined,
+        receivedAt: new Date(extraIncomeForm.receivedAt).toISOString(),
+      });
+
+      setExtraIncomeForm({
+        amount: '',
+        title: '',
+        note: '',
+        receivedAt: toDateInputValue(),
+      });
+
+      showToast('success', 'Đã thêm khoản thu ngoài thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể thêm khoản thu ngoài.',
+        );
+      } else {
+        showToast('error', 'Không thể thêm khoản thu ngoài.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteExtraIncome = async (id: number) => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.delete(`/extra-incomes/${id}`);
+      showToast('success', 'Đã xóa khoản thu ngoài thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể xóa khoản thu ngoài.',
+        );
+      } else {
+        showToast('error', 'Không thể xóa khoản thu ngoài.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitExpenseCategory = async () => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.post('/expense-categories', {
+        name: expenseCategoryForm.name.trim(),
+        color: expenseCategoryForm.color.trim() || undefined,
+      });
+
+      setExpenseCategoryForm({
+        name: '',
+        color: '#2563eb',
+      });
+
+      showToast('success', 'Đã thêm nhóm chi tiêu thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể thêm nhóm chi tiêu.',
+        );
+      } else {
+        showToast('error', 'Không thể thêm nhóm chi tiêu.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitRecurringExpense = async () => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.post('/recurring-expenses', {
+        categoryId: Number(recurringExpenseForm.categoryId),
+        title: recurringExpenseForm.title.trim(),
+        amount: Number(recurringExpenseForm.amount || 0),
+        frequency: recurringExpenseForm.frequency,
+        dayOfWeek: recurringExpenseForm.dayOfWeek
+          ? Number(recurringExpenseForm.dayOfWeek)
+          : undefined,
+        dayOfMonth: recurringExpenseForm.dayOfMonth
+          ? Number(recurringExpenseForm.dayOfMonth)
+          : undefined,
+        monthOfYear: recurringExpenseForm.monthOfYear
+          ? Number(recurringExpenseForm.monthOfYear)
+          : undefined,
+        startDate: new Date(recurringExpenseForm.startDate).toISOString(),
+        endDate: recurringExpenseForm.endDate
+          ? new Date(recurringExpenseForm.endDate).toISOString()
+          : undefined,
+        note: recurringExpenseForm.note.trim() || undefined,
+        isActive: recurringExpenseForm.isActive,
+      });
+
+      setRecurringExpenseForm((current) => ({
+        ...current,
+        title: '',
+        amount: '',
+        dayOfWeek: '',
+        dayOfMonth: '',
+        monthOfYear: '',
+        startDate: toDateInputValue(),
+        endDate: '',
+        note: '',
+        isActive: true,
+      }));
+
+      showToast('success', 'Đã tạo khoản chi định kỳ thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể tạo khoản chi định kỳ.',
+        );
+      } else {
+        showToast('error', 'Không thể tạo khoản chi định kỳ.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleRecurringExpense = async (item: RecurringExpense) => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.patch(`/recurring-expenses/${item.id}`, {
+        isActive: !item.isActive,
+      });
+      showToast(
+        'success',
+        item.isActive
+          ? 'Đã tạm dừng khoản chi định kỳ.'
+          : 'Đã bật lại khoản chi định kỳ.',
+      );
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể cập nhật khoản chi định kỳ.',
+        );
+      } else {
+        showToast('error', 'Không thể cập nhật khoản chi định kỳ.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteRecurringExpense = async (id: number) => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.delete(`/recurring-expenses/${id}`);
+      showToast('success', 'Đã xóa khoản chi định kỳ thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể xóa khoản chi định kỳ.',
+        );
+      } else {
+        showToast('error', 'Không thể xóa khoản chi định kỳ.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePrefillExpenseEntryFromRecurring = (item: RecurringExpense) => {
+    setExpenseEntryForm({
+      categoryId: String(item.categoryId),
+      recurringExpenseId: String(item.id),
+      amount: String(item.amount),
+      title: item.title,
+      note: item.note ?? '',
+      spentAt: toDateInputValue(),
+    });
+    setActivePage('SPENDING');
+  };
+
+  const handleSubmitExpenseEntry = async () => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.post('/expense-entries', {
+        categoryId: Number(expenseEntryForm.categoryId),
+        recurringExpenseId: expenseEntryForm.recurringExpenseId
+          ? Number(expenseEntryForm.recurringExpenseId)
+          : undefined,
+        amount: Number(expenseEntryForm.amount || 0),
+        title: expenseEntryForm.title.trim(),
+        note: expenseEntryForm.note.trim() || undefined,
+        spentAt: new Date(expenseEntryForm.spentAt).toISOString(),
+      });
+
+      setExpenseEntryForm((current) => ({
+        ...current,
+        recurringExpenseId: '',
+        amount: '',
+        title: '',
+        note: '',
+        spentAt: toDateInputValue(),
+      }));
+
+      showToast('success', 'Đã lưu chi tiêu thực tế thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể lưu chi tiêu thực tế.',
+        );
+      } else {
+        showToast('error', 'Không thể lưu chi tiêu thực tế.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteExpenseEntry = async (id: number) => {
+    setSubmitting(true);
+    clearToast();
+
+    try {
+      await api.delete(`/expense-entries/${id}`);
+      showToast('success', 'Đã xóa chi tiêu thực tế thành công.');
+      await loadData(spendingMonth);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        showToast(
+          'error',
+          error.response?.data?.message ||
+            error.message ||
+            'Không thể xóa chi tiêu thực tế.',
+        );
+      } else {
+        showToast('error', 'Không thể xóa chi tiêu thực tế.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleDeleteTransaction = async (transactionId: number) => {
     setSubmitting(true);
     clearToast();
@@ -1246,6 +1706,54 @@ function App() {
             onRequestDelete={setTransactionPendingDelete}
           />
         </>
+      ) : activePage === 'SPENDING' ? (
+        <SpendingManagementPage
+          month={spendingMonth}
+          summary={spendingSummary}
+          categories={expenseCategories}
+          recurringExpenses={recurringExpenses}
+          expenseEntries={expenseEntries}
+          monthlyIncomeForm={monthlyIncomeForm}
+          extraIncomeForm={extraIncomeForm}
+          expenseCategoryForm={expenseCategoryForm}
+          recurringExpenseForm={recurringExpenseForm}
+          expenseEntryForm={expenseEntryForm}
+          submitting={submitting}
+          onMonthChange={setSpendingMonth}
+          onMonthlyIncomeFormChange={setMonthlyIncomeForm}
+          onExtraIncomeFormChange={setExtraIncomeForm}
+          onExpenseCategoryFormChange={setExpenseCategoryForm}
+          onRecurringExpenseFormChange={setRecurringExpenseForm}
+          onExpenseEntryFormChange={setExpenseEntryForm}
+          onSubmitMonthlyIncome={() => {
+            void handleSubmitMonthlyIncome();
+          }}
+          onSubmitExtraIncome={() => {
+            void handleSubmitExtraIncome();
+          }}
+          onDeleteExtraIncome={(id: number) => {
+            void handleDeleteExtraIncome(id);
+          }}
+          onSubmitExpenseCategory={() => {
+            void handleSubmitExpenseCategory();
+          }}
+          onSubmitRecurringExpense={() => {
+            void handleSubmitRecurringExpense();
+          }}
+          onToggleRecurringExpense={(item: RecurringExpense) => {
+            void handleToggleRecurringExpense(item);
+          }}
+          onDeleteRecurringExpense={(id: number) => {
+            void handleDeleteRecurringExpense(id);
+          }}
+          onPrefillExpenseEntryFromRecurring={handlePrefillExpenseEntryFromRecurring}
+          onSubmitExpenseEntry={() => {
+            void handleSubmitExpenseEntry();
+          }}
+          onDeleteExpenseEntry={(id: number) => {
+            void handleDeleteExpenseEntry(id);
+          }}
+        />
       ) : (
         <TaskManagementPage
           tasks={filteredTasks}
