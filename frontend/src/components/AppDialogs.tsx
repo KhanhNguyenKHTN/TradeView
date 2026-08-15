@@ -14,7 +14,25 @@ import type {
   TransactionFormState,
   TransactionType,
 } from '../types/app';
-import { formatCurrencyPreview, formatDateTime } from '../utils/appFormatters';
+import { formatDateTime } from '../utils/appFormatters';
+
+function sanitizeCurrencyInput(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function formatCurrencyInputValue(value: string) {
+  if (!value) {
+    return '';
+  }
+
+  const normalizedValue = sanitizeCurrencyInput(value);
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  return new Intl.NumberFormat('vi-VN').format(Number(normalizedValue));
+}
 
 type DeleteTransactionDialogProps = {
   transaction: LatestTransaction;
@@ -217,44 +235,42 @@ export function TransactionDialog({
           <label>
             {isSavingTransaction ? 'Lãi suất năm (%)' : 'Giá khớp lệnh'}
             <input
-              type="number"
+              type={isSavingTransaction ? 'number' : 'text'}
               min="0"
-              step="0.01"
+              step={isSavingTransaction ? '0.01' : undefined}
+              inputMode={isSavingTransaction ? undefined : 'numeric'}
               placeholder={isSavingTransaction ? 'Ví dụ: 5.8' : '0'}
-              value={form.price}
+              value={
+                isSavingTransaction ? form.price : formatCurrencyInputValue(form.price)
+              }
               onChange={(event) =>
                 onChange((current) => ({
                   ...current,
-                  price: event.target.value,
+                  price: isSavingTransaction
+                    ? event.target.value
+                    : sanitizeCurrencyInput(event.target.value),
                 }))
               }
               disabled={submitting}
               required
             />
-            {!isSavingTransaction && formatCurrencyPreview(form.price) ? (
-              <span className="input-preview">{formatCurrencyPreview(form.price)}</span>
-            ) : null}
           </label>
 
           <label>
             Phí giao dịch
             <input
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="numeric"
               placeholder="0"
-              value={form.fee}
+              value={formatCurrencyInputValue(form.fee)}
               onChange={(event) =>
                 onChange((current) => ({
                   ...current,
-                  fee: event.target.value,
+                  fee: sanitizeCurrencyInput(event.target.value),
                 }))
               }
               disabled={submitting}
             />
-            {formatCurrencyPreview(form.fee) ? (
-              <span className="input-preview">{formatCurrencyPreview(form.fee)}</span>
-            ) : null}
           </label>
 
           <label>
@@ -416,17 +432,16 @@ export function PriceDialog({
           <label>
             Giá hiện tại
             <input
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="numeric"
               placeholder={
                 isAutoGoldPriceUpdate ? 'Giá sẽ được lấy tự động từ web vàng' : '0'
               }
-              value={form.price}
+              value={formatCurrencyInputValue(form.price)}
               onChange={(event) =>
                 onChange((current) => ({
                   ...current,
-                  price: event.target.value,
+                  price: sanitizeCurrencyInput(event.target.value),
                 }))
               }
               disabled={submitting || isAutoGoldPriceUpdate}
@@ -436,8 +451,6 @@ export function PriceDialog({
               <span className="input-preview">
                 Chế độ AUTO sẽ lấy giá mua vàng nhẫn khâu 9999 và tự tính lại dashboard.
               </span>
-            ) : formatCurrencyPreview(form.price) ? (
-              <span className="input-preview">{formatCurrencyPreview(form.price)}</span>
             ) : null}
           </label>
 
@@ -714,13 +727,12 @@ export function TaskDialog({
               <label>
                 Mục tiêu tài chính
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.financialTargetAmount}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatCurrencyInputValue(form.financialTargetAmount)}
                   onChange={(event) =>
                     onChange((current) => {
-                      const financialTargetAmount = event.target.value;
+                      const financialTargetAmount = sanitizeCurrencyInput(event.target.value);
                       const target = Number(financialTargetAmount || 0);
                       const currentAmount = Number(current.financialCurrentAmount || 0);
                       const progress =
@@ -742,13 +754,12 @@ export function TaskDialog({
               <label>
                 Số tiền hiện có
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.financialCurrentAmount}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatCurrencyInputValue(form.financialCurrentAmount)}
                   onChange={(event) =>
                     onChange((current) => {
-                      const financialCurrentAmount = event.target.value;
+                      const financialCurrentAmount = sanitizeCurrencyInput(event.target.value);
                       const target = Number(current.financialTargetAmount || 0);
                       const currentAmount = Number(financialCurrentAmount || 0);
                       const progress =

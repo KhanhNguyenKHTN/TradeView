@@ -13,11 +13,7 @@ import type {
   RecurringExpenseFormState,
   SpendingSummary,
 } from '../types/app';
-import {
-  formatCurrency,
-  formatCurrencyPreview,
-  formatDateTime,
-} from '../utils/appFormatters';
+import { formatCurrency, formatDateTime } from '../utils/appFormatters';
 
 type SpendingManagementPageProps = {
   month: string;
@@ -123,6 +119,24 @@ function formatSchedule(item: RecurringExpense) {
 function renderDelta(value: number) {
   const className = value >= 0 ? 'profit' : 'loss';
   return <strong className={className}>{`${value >= 0 ? '+' : ''}${formatCurrency(value)}`}</strong>;
+}
+
+function sanitizeCurrencyInput(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function formatCurrencyInputValue(value: string) {
+  if (!value) {
+    return '';
+  }
+
+  const normalizedValue = sanitizeCurrencyInput(value);
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  return new Intl.NumberFormat('vi-VN').format(Number(normalizedValue));
 }
 
 type DialogShellProps = {
@@ -660,17 +674,16 @@ export default function SpendingManagementPage({
             <label>
               <span>Số tiền</span>
               <input
-                type="number"
-                min="0"
-                value={monthlyIncomeForm.amount}
+                type="text"
+                inputMode="numeric"
+                value={formatCurrencyInputValue(monthlyIncomeForm.amount)}
                 onChange={(event) =>
                   onMonthlyIncomeFormChange({
                     ...monthlyIncomeForm,
-                    amount: event.target.value,
+                    amount: sanitizeCurrencyInput(event.target.value),
                   })
                 }
               />
-              <small>{formatCurrencyPreview(monthlyIncomeForm.amount)}</small>
             </label>
             <label className="form-grid-full">
               <span>Ghi chú</span>
@@ -715,17 +728,16 @@ export default function SpendingManagementPage({
             <label>
               <span>Số tiền</span>
               <input
-                type="number"
-                min="0"
-                value={extraIncomeForm.amount}
+                type="text"
+                inputMode="numeric"
+                value={formatCurrencyInputValue(extraIncomeForm.amount)}
                 onChange={(event) =>
                   onExtraIncomeFormChange({
                     ...extraIncomeForm,
-                    amount: event.target.value,
+                    amount: sanitizeCurrencyInput(event.target.value),
                   })
                 }
               />
-              <small>{formatCurrencyPreview(extraIncomeForm.amount)}</small>
             </label>
             <label>
               <span>Ngày nhận</span>
@@ -900,17 +912,16 @@ export default function SpendingManagementPage({
             <label>
               <span>Số tiền</span>
               <input
-                type="number"
-                min="0"
-                value={recurringExpenseForm.amount}
+                type="text"
+                inputMode="numeric"
+                value={formatCurrencyInputValue(recurringExpenseForm.amount)}
                 onChange={(event) =>
                   onRecurringExpenseFormChange({
                     ...recurringExpenseForm,
-                    amount: event.target.value,
+                    amount: sanitizeCurrencyInput(event.target.value),
                   })
                 }
               />
-              <small>{formatCurrencyPreview(recurringExpenseForm.amount)}</small>
             </label>
             <label>
               <span>Ngày bắt đầu</span>
@@ -1101,17 +1112,16 @@ export default function SpendingManagementPage({
             <label>
               <span>Số tiền</span>
               <input
-                type="number"
-                min="0"
-                value={expenseEntryForm.amount}
+                type="text"
+                inputMode="numeric"
+                value={formatCurrencyInputValue(expenseEntryForm.amount)}
                 onChange={(event) =>
                   onExpenseEntryFormChange({
                     ...expenseEntryForm,
-                    amount: event.target.value,
+                    amount: sanitizeCurrencyInput(event.target.value),
                   })
                 }
               />
-              <small>{formatCurrencyPreview(expenseEntryForm.amount)}</small>
             </label>
             <label>
               <span>Ngày</span>

@@ -9,6 +9,9 @@ SEND_MAIL="$DEPLOY_DIR/noti.py"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') cron_deploy START PID=$$" >> "$LOG_FILE"
 if [ -f "$ZIP_FILE" ]; then
+    set -a
+    source /root/.deploy-mail.env
+    set +a
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Found deploy_temp.zip, starting deploy..." >> "$LOG_FILE"
 
     /bin/bash "$DEPLOY_SCRIPT" >> "$LOG_FILE" 2>&1
@@ -18,11 +21,11 @@ if [ -f "$ZIP_FILE" ]; then
     if [ "$EXIT_CODE" -eq 0 ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') - Deploy completed." >> "$LOG_FILE"
 
-        python3 "$SEND_MAIL" SUCCESS
+        python3 "$SEND_MAIL" SUCCESS >> "$LOG_FILE"
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') - Deploy failed, exit code: $EXIT_CODE" >> "$LOG_FILE"
 
-        python3 "$SEND_MAIL" FAILED
+        python3 "$SEND_MAIL" FAILED >> "$LOG_FILE"
     fi
 fi
 echo "$(date '+%Y-%m-%d %H:%M:%S') cron_deploy END PID=$$" >> "$LOG_FILE"
