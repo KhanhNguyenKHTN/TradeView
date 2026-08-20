@@ -1212,7 +1212,7 @@ export class FinanceController {
         return;
       }
 
-      if (cells[0] === 'Vàng nhẫn khâu 9999') {
+      if (cells[0] === 'Vàng nhẫn khâu 9999' || cells[0] === 'Vang khau 9999') {
         buyText = cells[1];
         sellText = cells[2];
       }
