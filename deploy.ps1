@@ -1,3 +1,7 @@
+param(
+    [string]$p
+)
+
 #Clean folder
 echo "Cleaning build..."
 Remove-Item "frontend/dist" -Recurse -Force -ErrorAction SilentlyContinue
@@ -33,11 +37,7 @@ powershell -Command "Compress-Archive -Path 'deploy_temp' -DestinationPath 'depl
 
 #copy to server
 echo "Deploying..."
-scp deploy_temp.zip root@server:/home/data/TaiChinh
-
-#scp auto_deploy.sh root@server:/home/data/TaiChinh
-#install package in server
-#npm ci --omit=dev
+pscp.exe -pw $p deploy_temp.zip root@server:/home/data/TaiChinh
 
 echo "Deployed successfully..."
 #Clean folder
