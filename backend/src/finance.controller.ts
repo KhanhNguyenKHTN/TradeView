@@ -119,6 +119,23 @@ type CreateRecurringExpenseDto = {
 
 type UpdateRecurringExpenseDto = Partial<CreateRecurringExpenseDto>;
 
+type PaginationQueryDto = {
+  page?: string;
+  pageSize?: string;
+};
+
+type PaginationResult<T> = {
+  items: T[];
+  pagination: {
+    page: number;
+    pageSize: number | 'all';
+    totalItems: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+};
+
 type CreateExpenseEntryDto = {
   categoryId: number;
   recurringExpenseId?: number;
@@ -242,8 +259,12 @@ export class FinanceController {
   }
 
   @Get('transactions')
-  async getTransactions() {
-    return this.prisma.transaction.findMany({
+  async getTransactions(@Query() query: PaginationQueryDto) {
+    const pagination = this.parsePaginationQuery(query);
+    const where = {};
+    const totalItems = await this.prisma.transaction.count({ where });
+    const items = await this.prisma.transaction.findMany({
+      where,
       include: {
         asset: {
           include: {
@@ -252,7 +273,15 @@ export class FinanceController {
         },
       },
       orderBy: { executedAt: 'desc' },
+      ...(pagination.take === undefined
+        ? {}
+        : {
+            skip: pagination.skip,
+            take: pagination.take,
+          }),
     });
+
+    return this.buildPaginatedResponse(items, totalItems, pagination);
   }
 
   @Delete('transactions/:id')
@@ -341,12 +370,26 @@ export class FinanceController {
   }
 
   @Get('tasks')
-  async getTasks() {
+  async getTasks(@Query() query: PaginationQueryDto) {
+    const pagination = this.parsePaginationQuery(query);
+    const where = {};
+    const totalItems = await this.prisma.task.count({ where });
     const tasks = await this.prisma.task.findMany({
+      where,
       orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { id: 'desc' }],
+      ...(pagination.take === undefined
+        ? {}
+        : {
+            skip: pagination.skip,
+            take: pagination.take,
+          }),
     });
 
-    return tasks.map((task) => this.serializeTask(task));
+    return this.buildPaginatedResponse(
+      tasks.map((task) => this.serializeTask(task)),
+      totalItems,
+      pagination,
+    );
   }
 
   @Get('tasks/summary')
@@ -1314,6 +1357,80 @@ export class FinanceController {
     }
 
     return this.normalizeTaskProgress(manualProgress ?? 0);
+  }
+
+  private parsePaginationQuery(query: PaginationQueryDto) {
+    const parsedPage =
+      query.page && query.page.trim() !== ''
+        ? Number.parseInt(query.page, 10)
+        : 1;
+
+    if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+
+    if (!query.pageSize || query.pageSize.trim() === '') {
+      return {
+        page: parsedPage,
+        pageSize: 10 as number | 'all',
+        skip: (parsedPage - 1) * 10,
+        take: 10,
+      };
+    }
+
+    if (query.pageSize === 'all') {
+      return {
+        page: 1,
+        pageSize: 'all' as const,
+        skip: 0,
+        take: undefined,
+      };
+    }
+
+    const parsedPageSize = Number.parseInt(query.pageSize, 10);
+
+    if (!Number.isInteger(parsedPageSize) || parsedPageSize < 1) {
+      throw new BadRequestException('pageSize must be a positive integer or "all"');
+    }
+
+    return {
+      page: parsedPage,
+      pageSize: parsedPageSize as number | 'all',
+      skip: (parsedPage - 1) * parsedPageSize,
+      take: parsedPageSize,
+    };
+  }
+
+  private buildPaginatedResponse<T>(
+    items: T[],
+    totalItems: number,
+    pagination: {
+      page: number;
+      pageSize: number | 'all';
+      skip: number;
+      take: number | undefined;
+    },
+  ): PaginationResult<T> {
+    const totalPages =
+      pagination.pageSize === 'all'
+        ? totalItems > 0
+          ? 1
+          : 0
+        : Math.ceil(totalItems / pagination.pageSize);
+
+    return {
+      items,
+      pagination: {
+        page: pagination.pageSize === 'all' ? 1 : pagination.page,
+        pageSize: pagination.pageSize,
+        totalItems,
+        totalPages,
+        hasNextPage:
+          pagination.pageSize === 'all' ? false : pagination.page < totalPages,
+        hasPreviousPage:
+          pagination.pageSize === 'all' ? false : pagination.page > 1 && totalPages > 0,
+      },
+    };
   }
 
   private serializeTask(task: {

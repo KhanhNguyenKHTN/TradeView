@@ -43,6 +43,27 @@ export type DashboardResponse = {
   assets: AssetSummary[];
 };
 
+export type PaginationPageSize = number | 'all';
+
+export type PaginationMeta = {
+  page: number;
+  pageSize: PaginationPageSize;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
+export type PaginatedResponse<T> = {
+  items: T[];
+  pagination: PaginationMeta;
+};
+
+export type PaginationState = {
+  page: number;
+  pageSize: PaginationPageSize;
+};
+
 export type LatestTransaction = {
   id: number;
   type: TransactionType;

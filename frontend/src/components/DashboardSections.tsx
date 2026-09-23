@@ -5,6 +5,7 @@ import type {
   DashboardResponse,
   LatestPrice,
   LatestTransaction,
+  PaginationMeta,
 } from '../types/app';
 
 type AppHeaderProps = {
@@ -440,21 +441,55 @@ export function QuickActionsSection({
 
 type RecentTransactionsSectionProps = {
   transactions: LatestTransaction[];
+  pagination: PaginationMeta;
   submitting: boolean;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: PaginationMeta['pageSize']) => void;
   onRequestDelete: (transaction: LatestTransaction) => void;
 };
 
 export function RecentTransactionsSection({
   transactions,
+  pagination,
   submitting,
+  onPageChange,
+  onPageSizeChange,
   onRequestDelete,
 }: RecentTransactionsSectionProps) {
+  const pageSizeValue = String(pagination.pageSize);
+
   return (
     <section className="section">
       <div className="panel">
-        <div className="section-heading">
+        <div className="section-heading column">
           <div>
             <span className="section-kicker">Danh sách giao dịch</span>
+          </div>
+          <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+            <label className="pagination-page-size" style={{ minWidth: '160px' }}>
+              <span>Hiển thị</span>
+              <select
+                value={pageSizeValue}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  onPageSizeChange(
+                    nextValue === 'all' ? 'all' : Number(nextValue),
+                  );
+                }}
+                disabled={submitting}
+              >
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="all">Tất cả</option>
+              </select>
+            </label>
+            <div className="activity-meta">
+              <strong>
+                Trang {pagination.totalPages > 0 ? pagination.page : 0}/{pagination.totalPages}
+              </strong>
+              <p>Tổng số: {pagination.totalItems} giao dịch</p>
+            </div>
           </div>
         </div>
 
@@ -503,6 +538,25 @@ export function RecentTransactionsSection({
             </div>
           ))}
           {transactions.length === 0 ? <p>Chưa có giao dịch nào.</p> : null}
+        </div>
+
+        <div className="row mt-2" style={{ justifyContent: 'space-between', gap: '0.75rem' }}>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => onPageChange(pagination.page - 1)}
+            disabled={submitting || !pagination.hasPreviousPage}
+          >
+            Trang trước
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => onPageChange(pagination.page + 1)}
+            disabled={submitting || !pagination.hasNextPage}
+          >
+            Trang sau
+          </button>
         </div>
       </div>
     </section>

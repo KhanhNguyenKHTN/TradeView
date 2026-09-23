@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import axios from 'axios';
 import './App.css';
@@ -30,6 +30,8 @@ import type {
   LatestPrice,
   LatestTransaction,
   MonthlyIncome,
+  PaginationMeta,
+  PaginationState,
   MonthlyIncomeFormState,
   PriceFormState,
   RecurringExpense,
@@ -43,6 +45,21 @@ import type {
   TaskViewMode,
   TransactionFormState,
 } from './types/app';
+import {
+  api,
+  fetchCategories,
+  fetchDashboard,
+  fetchExpenseCategories,
+  fetchExpenseEntries,
+  fetchExtraIncomes,
+  fetchLatestPrices,
+  fetchMonthlyIncome,
+  fetchRecurringExpenses,
+  fetchSpendingSummary,
+  fetchTaskSummary,
+  fetchTasks,
+  fetchTransactions,
+} from './services/appApi';
 import { toDateInputValue, toDateTimeLocalValue } from './utils/appFormatters';
 
 type PushPermissionState = NotificationPermission | 'unsupported';
@@ -88,13 +105,6 @@ const DeleteTransactionDialog = lazy(() =>
 const ACCESS_COOKIE_NAME = 'tradeview_passcode_access';
 const ACCESS_COOKIE_DURATION_DAYS = 30;
 const APP_PASSCODE = import.meta.env.VITE_APP_PASSCODE?.trim() || '123456';
-
-const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000/api';
-
-const api = axios.create({
-  baseURL: apiBaseUrl,
-});
 
 function encodePushKey(value: ArrayBuffer | null) {
   if (!value) {
@@ -223,16 +233,30 @@ const emptyDashboard: DashboardResponse = {
   assets: [],
 };
 
-const emptyTaskSummary: TaskSummary = {
-  totalTasks: 0,
-  inProgressTasks: 0,
-  dueSoonTasks: 0,
-  completedTasks: 0,
-  financialPlanningTasks: 0,
-  averageFinancialProgress: 0,
-};
-
-const currentMonthValue = new Date().toISOString().slice(0, 7);
+ const emptyTaskSummary: TaskSummary = {
+   totalTasks: 0,
+   inProgressTasks: 0,
+   dueSoonTasks: 0,
+   completedTasks: 0,
+   financialPlanningTasks: 0,
+   averageFinancialProgress: 0,
+ };
+ 
+ const defaultPaginationState: PaginationState = {
+   page: 1,
+   pageSize: 10,
+ };
+ 
+ const emptyPaginationMeta: PaginationMeta = {
+   page: 1,
+   pageSize: 10,
+   totalItems: 0,
+   totalPages: 0,
+   hasNextPage: false,
+   hasPreviousPage: false,
+ };
+ 
+ const currentMonthValue = new Date().toISOString().slice(0, 7);
 
 const emptyMonthlyIncome: MonthlyIncome = {
   month: currentMonthValue,
@@ -300,9 +324,13 @@ function deleteCookie(name: string) {
 function App() {
   const toastTimeoutRef = useRef<number | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse>(emptyDashboard);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [transactions, setTransactions] = useState<LatestTransaction[]>([]);
-  const [latestPrices, setLatestPrices] = useState<LatestPrice[]>([]);
+   const [categories, setCategories] = useState<Category[]>([]);
+   const [transactions, setTransactions] = useState<LatestTransaction[]>([]);
+   const [transactionPagination, setTransactionPagination] =
+     useState<PaginationState>(defaultPaginationState);
+   const [transactionPaginationMeta, setTransactionPaginationMeta] =
+     useState<PaginationMeta>(emptyPaginationMeta);
+   const [latestPrices, setLatestPrices] = useState<LatestPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -314,10 +342,14 @@ function App() {
   );
   const [passcodeError, setPasscodeError] = useState('');
   const [activePage, setActivePage] = useState<AppPage>('DASHBOARD');
-  const [taskFilter, setTaskFilter] = useState<TaskViewFilter>('ALL');
-  const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('CARD');
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [taskSummary, setTaskSummary] = useState<TaskSummary>(emptyTaskSummary);
+   const [taskFilter, setTaskFilter] = useState<TaskViewFilter>('ALL');
+   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('CARD');
+   const [tasks, setTasks] = useState<TaskItem[]>([]);
+   const [taskPagination, setTaskPagination] =
+     useState<PaginationState>(defaultPaginationState);
+   const [taskPaginationMeta, setTaskPaginationMeta] =
+     useState<PaginationMeta>(emptyPaginationMeta);
+   const [taskSummary, setTaskSummary] = useState<TaskSummary>(emptyTaskSummary);
   const [spendingMonth, setSpendingMonth] = useState(currentMonthValue);
   const [spendingSummary, setSpendingSummary] = useState<SpendingSummary>(emptySpendingSummary);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
@@ -448,136 +480,152 @@ function App() {
     setPushDebugLog((current) => [...current.slice(-29), entry]);
   };
 
-  const loadData = async (month = spendingMonth) => {
+  const handleLoadError = useCallback((error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      setErrorMessage(
+        error.response?.data?.message || error.message || 'Không thể tải dữ liệu từ backend.',
+      );
+    } else {
+      setErrorMessage('Không thể tải dữ liệu từ backend.');
+    }
+  }, []);
+
+  const loadCoreData = useCallback(async () => {
+    const [loadedDashboard, loadedCategories, loadedPrices] = await Promise.all([
+      fetchDashboard(),
+      fetchCategories(),
+      fetchLatestPrices(),
+    ]);
+
+    setDashboard(loadedDashboard);
+    setCategories(loadedCategories);
+    setLatestPrices(loadedPrices);
+
+    setAssetForm((current) => ({
+      ...current,
+      categoryCode:
+        loadedCategories.find((category) => category.code === current.categoryCode)?.code ??
+        loadedCategories[0]?.code ??
+        'GOLD',
+    }));
+
+    setTransactionForm((current) => ({
+      ...current,
+      assetId:
+        loadedDashboard.assets.find((asset) => String(asset.id) === current.assetId)?.id.toString() ??
+        loadedDashboard.assets[0]?.id.toString() ??
+        '',
+    }));
+
+    setPriceForm((current) => ({
+      ...current,
+      assetId:
+        loadedDashboard.assets
+          .filter((asset) => asset.categoryCode !== 'SAVING')
+          .find((asset) => String(asset.id) === current.assetId)
+          ?.id.toString() ??
+        loadedDashboard.assets
+          .filter((asset) => asset.categoryCode !== 'SAVING')[0]
+          ?.id.toString() ??
+        '',
+    }));
+  }, []);
+
+  const loadTransactionData = useCallback(async (pagination = transactionPagination) => {
+    const loadedTransactions = await fetchTransactions(pagination);
+    setTransactions(loadedTransactions.items);
+    setTransactionPaginationMeta(loadedTransactions.pagination);
+  }, [transactionPagination]);
+
+  const loadTaskData = useCallback(async (pagination = taskPagination) => {
+    const [loadedTasks, loadedTaskSummary] = await Promise.all([
+      fetchTasks(pagination),
+      fetchTaskSummary(),
+    ]);
+
+    setTasks(loadedTasks.items);
+    setTaskPaginationMeta(loadedTasks.pagination);
+    setTaskSummary(loadedTaskSummary);
+  }, [taskPagination]);
+
+  const loadSpendingData = useCallback(async (month = spendingMonth) => {
+    const [
+      loadedMonthlyIncome,
+      loadedExtraIncomes,
+      loadedExpenseCategories,
+      loadedRecurringExpenses,
+      loadedExpenseEntries,
+      loadedSpendingSummary,
+    ] = await Promise.all([
+      fetchMonthlyIncome(month),
+      fetchExtraIncomes(month),
+      fetchExpenseCategories(),
+      fetchRecurringExpenses(),
+      fetchExpenseEntries(month),
+      fetchSpendingSummary(month),
+    ]);
+
+    setExpenseCategories(loadedExpenseCategories);
+    setRecurringExpenses(loadedRecurringExpenses);
+    setExpenseEntries(loadedExpenseEntries);
+    setSpendingSummary({
+      ...loadedSpendingSummary,
+      income: {
+        ...loadedSpendingSummary.income,
+        monthlyIncome: loadedMonthlyIncome,
+        extraItems: loadedSpendingSummary.income.extraItems ?? loadedExtraIncomes,
+      },
+    });
+
+    setMonthlyIncomeForm({
+      month,
+      amount: loadedMonthlyIncome?.amount ? String(loadedMonthlyIncome.amount) : '',
+      note: loadedMonthlyIncome?.note ?? '',
+    });
+
+    setRecurringExpenseForm((current) => ({
+      ...current,
+      categoryId:
+        loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
+        loadedExpenseCategories[0]?.id.toString() ??
+        '',
+    }));
+
+    setExpenseEntryForm((current) => ({
+      ...current,
+      categoryId:
+        loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
+        loadedExpenseCategories[0]?.id.toString() ??
+        '',
+    }));
+  }, [spendingMonth]);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
 
     try {
-      const [
-        dashboardRes,
-        categoriesRes,
-        transactionsRes,
-        pricesRes,
-        tasksRes,
-        taskSummaryRes,
-        monthlyIncomeRes,
-        extraIncomesRes,
-        expenseCategoriesRes,
-        recurringExpensesRes,
-        expenseEntriesRes,
-        spendingSummaryRes,
-      ] = await Promise.all([
-        api.get<DashboardResponse>('/dashboard'),
-        api.get<Category[]>('/categories'),
-        api.get<LatestTransaction[]>('/transactions'),
-        api.get<LatestPrice[]>('/prices/latest'),
-        api.get<TaskItem[]>('/tasks'),
-        api.get<TaskSummary>('/tasks/summary'),
-        api.get<MonthlyIncome>('/income-monthly', { params: { month } }),
-        api.get('/extra-incomes', { params: { month } }),
-        api.get<ExpenseCategory[]>('/expense-categories'),
-        api.get<RecurringExpense[]>('/recurring-expenses'),
-        api.get<ExpenseEntry[]>('/expense-entries', { params: { month } }),
-        api.get<SpendingSummary>('/spending-summary', { params: { month } }),
+      await Promise.all([
+        loadCoreData(),
+        loadTransactionData(transactionPagination),
+        loadTaskData(taskPagination),
+        loadSpendingData(spendingMonth),
       ]);
-
-      const loadedDashboard = dashboardRes.data;
-      const loadedCategories = categoriesRes.data;
-      const loadedTransactions = transactionsRes.data;
-      const loadedPrices = pricesRes.data;
-      const loadedTasks = tasksRes.data;
-      const loadedTaskSummary = taskSummaryRes.data;
-      const loadedMonthlyIncome = monthlyIncomeRes.data;
-      const loadedExpenseCategories = expenseCategoriesRes.data;
-      const loadedRecurringExpenses = recurringExpensesRes.data;
-      const loadedExpenseEntries = expenseEntriesRes.data;
-      const loadedSpendingSummary = spendingSummaryRes.data;
-
-      setDashboard(loadedDashboard);
-      setCategories(loadedCategories);
-      setTransactions(loadedTransactions);
-      setLatestPrices(loadedPrices);
-      setTasks(loadedTasks);
-      setTaskSummary(loadedTaskSummary);
-      setExpenseCategories(loadedExpenseCategories);
-      setRecurringExpenses(loadedRecurringExpenses);
-      setExpenseEntries(loadedExpenseEntries);
-      setSpendingSummary({
-        ...loadedSpendingSummary,
-        income: {
-          ...loadedSpendingSummary.income,
-          monthlyIncome: loadedMonthlyIncome,
-          extraItems: loadedSpendingSummary.income.extraItems ?? extraIncomesRes.data,
-        },
-      });
-
-      setAssetForm((current) => ({
-        ...current,
-        categoryCode:
-          loadedCategories.find((category) => category.code === current.categoryCode)
-            ?.code ??
-          loadedCategories[0]?.code ??
-          'GOLD',
-      }));
-
-      setTransactionForm((current) => ({
-        ...current,
-        assetId:
-          loadedDashboard.assets.find(
-            (asset) => String(asset.id) === current.assetId,
-          )?.id.toString() ??
-          loadedDashboard.assets[0]?.id.toString() ??
-          '',
-      }));
-
-      setPriceForm((current) => ({
-        ...current,
-        assetId:
-          loadedDashboard.assets
-            .filter((asset) => asset.categoryCode !== 'SAVING')
-            .find((asset) => String(asset.id) === current.assetId)
-            ?.id.toString() ??
-          loadedDashboard.assets
-            .filter((asset) => asset.categoryCode !== 'SAVING')[0]
-            ?.id.toString() ??
-          '',
-      }));
-
-      setMonthlyIncomeForm({
-        month,
-        amount: loadedMonthlyIncome?.amount ? String(loadedMonthlyIncome.amount) : '',
-        note: loadedMonthlyIncome?.note ?? '',
-      });
-
-      setRecurringExpenseForm((current) => ({
-        ...current,
-        categoryId:
-          loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
-          loadedExpenseCategories[0]?.id.toString() ??
-          '',
-      }));
-
-      setExpenseEntryForm((current) => ({
-        ...current,
-        categoryId:
-          loadedExpenseCategories.find((item) => String(item.id) === current.categoryId)?.id.toString() ??
-          loadedExpenseCategories[0]?.id.toString() ??
-          '',
-      }));
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(
-          error.response?.data?.message ||
-            error.message ||
-            'Không thể tải dữ liệu từ backend.',
-        );
-      } else {
-        setErrorMessage('Không thể tải dữ liệu từ backend.');
-      }
+      handleLoadError(error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    handleLoadError,
+    loadCoreData,
+    loadSpendingData,
+    loadTaskData,
+    loadTransactionData,
+    spendingMonth,
+    taskPagination,
+    transactionPagination,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -587,8 +635,50 @@ function App() {
     }
 
     setAutoGoldRefreshTriggered(false);
-    void loadData(spendingMonth);
-  }, [isAuthenticated, spendingMonth]);
+    void loadData();
+  }, [isAuthenticated, loadData]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await loadTransactionData(transactionPagination);
+      } catch (error) {
+        handleLoadError(error);
+      }
+    })();
+  }, [handleLoadError, isAuthenticated, loadTransactionData, transactionPagination]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await loadTaskData(taskPagination);
+      } catch (error) {
+        handleLoadError(error);
+      }
+    })();
+  }, [handleLoadError, isAuthenticated, loadTaskData, taskPagination]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await loadSpendingData(spendingMonth);
+      } catch (error) {
+        handleLoadError(error);
+      }
+    })();
+  }, [handleLoadError, isAuthenticated, loadSpendingData, spendingMonth]);
 
   useEffect(() => {
     return () => {
@@ -628,7 +718,7 @@ function App() {
           assetId: autoGoldAsset.assetId,
           capturedAt: new Date().toISOString(),
         });
-        await loadData();
+        await loadCoreData();
       } catch (error) {
         if (axios.isAxiosError(error)) {
           showToast(
@@ -1163,7 +1253,7 @@ function App() {
         note: monthlyIncomeForm.note.trim() || undefined,
       });
       showToast('success', 'Đã lưu doanh thu tháng thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1200,7 +1290,7 @@ function App() {
       });
 
       showToast('success', 'Đã thêm khoản thu ngoài thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1224,7 +1314,7 @@ function App() {
     try {
       await api.delete(`/extra-incomes/${id}`);
       showToast('success', 'Đã xóa khoản thu ngoài thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1257,7 +1347,7 @@ function App() {
       });
 
       showToast('success', 'Đã thêm nhóm chi tiêu thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1315,7 +1405,7 @@ function App() {
       }));
 
       showToast('success', 'Đã tạo khoản chi định kỳ thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1346,7 +1436,7 @@ function App() {
           ? 'Đã tạm dừng khoản chi định kỳ.'
           : 'Đã bật lại khoản chi định kỳ.',
       );
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1370,7 +1460,7 @@ function App() {
     try {
       await api.delete(`/recurring-expenses/${id}`);
       showToast('success', 'Đã xóa khoản chi định kỳ thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1425,7 +1515,7 @@ function App() {
       }));
 
       showToast('success', 'Đã lưu chi tiêu thực tế thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1449,7 +1539,7 @@ function App() {
     try {
       await api.delete(`/expense-entries/${id}`);
       showToast('success', 'Đã xóa chi tiêu thực tế thành công.');
-      await loadData(spendingMonth);
+      await loadSpendingData(spendingMonth);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         showToast(
@@ -1700,11 +1790,24 @@ function App() {
             onOpenAsset={() => setIsAssetDialogOpen(true)}
           />
 
-          <RecentTransactionsSection
-            transactions={transactions}
-            submitting={submitting}
-            onRequestDelete={setTransactionPendingDelete}
-          />
+           <RecentTransactionsSection
+             transactions={transactions}
+             pagination={transactionPaginationMeta}
+             submitting={submitting}
+             onPageChange={(page: number) =>
+               setTransactionPagination((current) => ({
+                 ...current,
+                 page,
+               }))
+             }
+            onPageSizeChange={(pageSize) =>
+              setTransactionPagination({
+                page: 1,
+                pageSize,
+              })
+            }
+             onRequestDelete={setTransactionPendingDelete}
+           />
         </>
       ) : activePage === 'SPENDING' ? (
         <SpendingManagementPage
@@ -1755,21 +1858,34 @@ function App() {
           }}
         />
       ) : (
-        <TaskManagementPage
-          tasks={filteredTasks}
-          summary={taskSummary}
-          activeFilter={taskFilter}
-          viewMode={taskViewMode}
-          submitting={submitting}
-          onFilterChange={setTaskFilter}
-          onViewModeChange={setTaskViewMode}
-          onCreateTask={(values) => {
+         <TaskManagementPage
+           tasks={filteredTasks}
+           summary={taskSummary}
+           activeFilter={taskFilter}
+           viewMode={taskViewMode}
+           pagination={taskPaginationMeta}
+           submitting={submitting}
+           onFilterChange={setTaskFilter}
+           onViewModeChange={setTaskViewMode}
+           onPageChange={(page: number) =>
+             setTaskPagination((current) => ({
+               ...current,
+               page,
+             }))
+           }
+          onPageSizeChange={(pageSize) =>
+            setTaskPagination({
+              page: 1,
+              pageSize,
+            })
+          }
+          onCreateTask={(values: TaskFormValues) => {
             void handleCreateTask(values);
           }}
-          onTaskChange={(taskId, field, value) => {
+          onTaskChange={(taskId: number, field: TaskEditableField, value: string | boolean) => {
             void handleTaskChange(taskId, field, value);
           }}
-          onDeleteTask={(taskId) => {
+          onDeleteTask={(taskId: number) => {
             void handleDeleteTask(taskId);
           }}
         />

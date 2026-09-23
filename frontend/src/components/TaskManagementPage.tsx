@@ -7,6 +7,7 @@ import {
 } from './AppDialogs';
 import { formatDateTime, toDateTimeLocalValue } from '../utils/appFormatters';
 import type {
+  PaginationMeta,
   TaskEditableField,
   TaskFormValues,
   TaskItem,
@@ -22,9 +23,12 @@ type TaskManagementPageProps = {
   summary: TaskSummary;
   activeFilter: TaskViewFilter;
   viewMode: TaskViewMode;
+  pagination: PaginationMeta;
   submitting: boolean;
   onFilterChange: (filter: TaskViewFilter) => void;
   onViewModeChange: (mode: TaskViewMode) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: PaginationMeta['pageSize']) => void;
   onCreateTask: (values: TaskFormValues) => void;
   onTaskChange: (
     taskId: number,
@@ -150,9 +154,12 @@ export default function TaskManagementPage({
   summary,
   activeFilter,
   viewMode,
+  pagination,
   submitting,
   onFilterChange,
   onViewModeChange,
+  onPageChange,
+  onPageSizeChange,
   onCreateTask,
   onTaskChange,
   onDeleteTask,
@@ -189,6 +196,8 @@ export default function TaskManagementPage({
       }),
     [tasks],
   );
+
+  const pageSizeValue = String(pagination.pageSize);
 
   const resetCreateForm = () => {
     setCreateForm(emptyTaskForm());
@@ -331,8 +340,32 @@ export default function TaskManagementPage({
       <section className="section">
         <div className="panel">
           <div className="section-heading column">
-            <div>
+            <div className="row" style={{ justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
               <span className="section-kicker">Danh sách task</span>
+              <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+                <label className="pagination-page-size" style={{ minWidth: '160px' }}>
+                  <span>Hiển thị</span>
+                  <select
+                    value={pageSizeValue}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      onPageSizeChange(nextValue === 'all' ? 'all' : Number(nextValue));
+                    }}
+                    disabled={submitting}
+                  >
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                    <option value="all">Tất cả</option>
+                  </select>
+                </label>
+                <div className="activity-meta">
+                  <strong>
+                    Trang {pagination.totalPages > 0 ? pagination.page : 0}/{pagination.totalPages}
+                  </strong>
+                  <p>Tổng số: {pagination.totalItems} task</p>
+                </div>
+              </div>
             </div>
 
             <div className="task-toolbar">
@@ -629,6 +662,25 @@ export default function TaskManagementPage({
                 Không có task nào theo trạng thái đang chọn.
               </div>
             ) : null}
+          </div>
+
+          <div className="row mt-2" style={{ justifyContent: 'space-between', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => onPageChange(pagination.page - 1)}
+              disabled={submitting || !pagination.hasPreviousPage}
+            >
+              Trang trước
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => onPageChange(pagination.page + 1)}
+              disabled={submitting || !pagination.hasNextPage}
+            >
+              Trang sau
+            </button>
           </div>
         </div>
       </section>
